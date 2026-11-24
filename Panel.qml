@@ -115,6 +115,20 @@ Panel {
     launchSystemMonitor()
   }
 
+  function killProcess(pid, force) {
+    if (!pid) return
+    var sig = force ? "-9" : "-15"
+    Quickshell.execDetached(["kill", sig, String(pid)])
+    killRefreshTimer.restart()
+  }
+
+  Timer {
+    id: killRefreshTimer
+    interval: 500
+    repeat: false
+    onTriggered: root.refresh()
+  }
+
   ShellIpc {
     target: root.moduleName
     function open(): void { root.open() }
@@ -127,6 +141,7 @@ Panel {
     function openSystemManager(): void { root.launchSystemMonitor() }
     function launch(monitor: string): void { root.launchSystemMonitor(monitor) }
     function setDefault(monitor: string): void { root.setDefaultTop(monitor) }
+    function kill(pid: int): void { root.killProcess(pid, false) }
   }
 
   Commons.Translations {
@@ -163,7 +178,7 @@ Panel {
   property string diskTotal: "0G"
   property int diskPercent: 0
 
-  property string loadStr: "0.00, 0.00, 0.00"
+  property string loadStr: "0.00"
   property int cores: 1
   property int threads: 1
   property var topProcs: []
@@ -242,7 +257,7 @@ Panel {
       batteryStatus = data.battery_status || ""
       batteryPowerW = data.battery_power_w !== undefined ? String(data.battery_power_w) : "0.0"
 
-      loadStr = (data.load_1 || 0).toFixed(2) + ", " + (data.load_5 || 0).toFixed(2) + ", " + (data.load_15 || 0).toFixed(2)
+      loadStr = (data.load_1 || 0).toFixed(2)
       cores = data.cores || 1
       threads = data.threads || cores
       topProcs = data.top_procs || []
@@ -343,16 +358,25 @@ Panel {
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(2)
 
+            Text {
+              textFormat: Text.PlainText
+              text: strings.t("sysmon.title")
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.title
+              font.bold: true
+            }
+
             Row {
               width: parent.width
 
               Text {
                 textFormat: Text.PlainText
-                text: strings.t("sysmon.title")
+                text: (root.threads > root.cores ? (root.cores + "C / " + root.threads + "T") : (root.cores + "C")) + " · " + strings.t("sysmon.load") + ": " + root.loadStr
                 color: root.foreground
+                opacity: 0.65
                 font.family: root.fontFamily
-                font.pixelSize: Style.font.title
-                font.bold: true
+                font.pixelSize: Style.font.bodySmall
                 anchors.verticalCenter: parent.verticalCenter
               }
 
@@ -383,15 +407,6 @@ Panel {
                   font.bold: true
                 }
               }
-            }
-
-            Text {
-              textFormat: Text.PlainText
-              text: (root.threads > root.cores ? (root.cores + "C / " + root.threads + "T") : (root.cores + "C")) + " · " + strings.t("sysmon.load") + ": " + root.loadStr
-              color: root.foreground
-              opacity: 0.65
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
             }
           }
         }
@@ -461,19 +476,27 @@ Panel {
           Repeater {
             model: root.topProcs
             Item {
+              id: procRow
               required property var modelData
               width: parent.width
-              implicitHeight: Style.space(18)
+              implicitHeight: Style.space(20)
+
+              Rectangle {
+                anchors.fill: parent
+                radius: Style.space(3)
+                color: rowMouse.containsMouse ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.08) : "transparent"
+              }
 
               Text {
                 textFormat: Text.PlainText
                 text: modelData.name || ""
                 elide: Text.ElideRight
-                width: Style.space(140)
+                width: Style.space(130)
                 color: root.foreground
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
                 anchors.left: parent.left
+                anchors.leftMargin: Style.space(4)
                 anchors.verticalCenter: parent.verticalCenter
               }
 
@@ -498,7 +521,83 @@ Panel {
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
                 anchors.right: parent.right
+                anchors.rightMargin: Style.space(4)
                 anchors.verticalCenter: parent.verticalCenter
+              }
+
+              MouseArea {
+                id: rowMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                acceptedButtons: Qt.RightButton
+                cursorShape: Qt.PointingHandCursor
+                onClicked: function(mouse) {
+                  if (mouse.button === Qt.RightButton) {
+                    killMenu.open()
+                  }
+                }
+              }
+
+              Popup {
+                id: killMenu
+                x: Math.max(0, Math.min(rowMouse.mouseX, procRow.width - width))
+                y: Math.min(rowMouse.mouseY, procRow.height)
+                width: Style.space(150)
+                padding: Style.space(4)
+                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+                background: Rectangle {
+                  color: Commons.Color.popups.background
+                  border.color: Commons.Color.popups.border
+                  border.width: Style.normalBorderWidth
+                  radius: Style.space(6)
+                }
+
+                contentItem: Column {
+                  spacing: Style.space(3)
+
+                  Text {
+                    textFormat: Text.PlainText
+                    text: (modelData.name || "Process") + " (" + modelData.pid + ")"
+                    color: root.foreground
+                    opacity: 0.6
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall - 1
+                    font.bold: true
+                    horizontalAlignment: Text.AlignHCenter
+                    width: parent.width
+                    elide: Text.ElideRight
+                  }
+
+                  Button {
+                    width: parent.width
+                    text: "End Process"
+                    iconText: "\uf00d"
+                    fontSize: Style.font.bodySmall
+                    horizontalPadding: Style.space(6)
+                    verticalPadding: Style.space(3)
+                    bordered: true
+                    onClicked: {
+                      root.killProcess(modelData.pid, false)
+                      killMenu.close()
+                    }
+                  }
+
+                  Button {
+                    width: parent.width
+                    text: "Force Kill"
+                    iconText: "\uf1f8"
+                    fontSize: Style.font.bodySmall
+                    foreground: root.urgentColor
+                    horizontalPadding: Style.space(6)
+                    verticalPadding: Style.space(3)
+                    bordered: true
+                    onClicked: {
+                      root.killProcess(modelData.pid, true)
+                      killMenu.close()
+                    }
+                  }
+                }
               }
             }
           }
