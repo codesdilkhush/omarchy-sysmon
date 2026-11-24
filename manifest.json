@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "codesdilkhush.sysmon",
   "name": "System Monitor",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "author": "Dilkhush",
   "license": "MIT",
   "description": "Real-time CPU & GPU thermals, battery, memory, disk, and network monitor with dynamic system monitor launcher",
