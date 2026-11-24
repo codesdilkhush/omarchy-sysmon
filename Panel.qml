@@ -495,7 +495,7 @@ Panel {
 
               Text {
                 textFormat: Text.PlainText
-                text: root.fwActive ? "\uf3ed" : "\uf071"
+                text: root.fwActive ? "\uf132" : "\uf071"
                 color: root.fwActive ? root.accentColor : root.urgentColor
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
@@ -529,7 +529,7 @@ Panel {
 
               Text {
                 textFormat: Text.PlainText
-                text: "\uf6ff"
+                text: "\uf0ec"
                 color: root.accentColor
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
