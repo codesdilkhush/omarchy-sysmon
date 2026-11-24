@@ -27,6 +27,10 @@ Panel {
   property var availableTops: ["btop"]
   readonly property var advancedTops: availableTops.filter(function(t) { return t !== "top" || availableTops.length === 1 })
 
+  property int currentTab: 0 // 0: Overview, 1: Processes, 2: Network
+  property string procSortBy: "cpu" // "cpu" or "mem"
+  property string procSearch: ""
+
   property string netInterface: ""
   property real prevNetRx: 0
   property real prevNetTx: 0
@@ -122,6 +126,22 @@ Panel {
     killRefreshTimer.restart()
   }
 
+  function getAppIcon(name) {
+    var n = (name || "").toLowerCase()
+    if (n.indexOf("chrome") !== -1 || n.indexOf("chromium") !== -1) return "\uf268"
+    if (n.indexOf("firefox") !== -1) return "\uf269"
+    if (n.indexOf("antigravity") !== -1 || n.indexOf("agy") !== -1) return "\uf121"
+    if (n.indexOf("terminal") !== -1 || n.indexOf("foot") !== -1 || n.indexOf("kitty") !== -1 || n.indexOf("alacritty") !== -1) return "\uf120"
+    if (n.indexOf("spotify") !== -1) return "\uf1bc"
+    if (n.indexOf("discord") !== -1) return "\uf392"
+    if (n.indexOf("slack") !== -1) return "\uf198"
+    if (n.indexOf("steam") !== -1) return "\uf1b6"
+    if (n.indexOf("telegram") !== -1) return "\uf2c6"
+    if (n.indexOf("code") !== -1 || n.indexOf("zed") !== -1) return "\uf121"
+    if (n.indexOf("superwhisper") !== -1) return "\uf130"
+    return "\uf0ac"
+  }
+
   Timer {
     id: killRefreshTimer
     interval: 500
@@ -137,6 +157,7 @@ Panel {
     function hide(): void { root.close() }
     function toggle(): void { root.toggle() }
     function togglePercentage(): void { root.togglePercentage() }
+    function setTab(tab: int): void { root.currentTab = tab }
     function openSystemMonitor(): void { root.launchSystemMonitor() }
     function openSystemManager(): void { root.launchSystemMonitor() }
     function launch(monitor: string): void { root.launchSystemMonitor(monitor) }
@@ -182,7 +203,29 @@ Panel {
   property int cores: 1
   property int threads: 1
   property var topProcs: []
+  property var allProcs: []
+  property var netProcs: []
+  property var netConns: []
   property bool hasData: false
+
+  readonly property var filteredProcs: {
+    var list = allProcs.slice()
+    if (procSearch.trim().length > 0) {
+      var q = procSearch.trim().toLowerCase()
+      list = list.filter(function(p) {
+        return (p.name && p.name.toLowerCase().indexOf(q) !== -1) ||
+               (p.comm && p.comm.toLowerCase().indexOf(q) !== -1) ||
+               (String(p.pid).indexOf(q) !== -1) ||
+               (p.user && p.user.toLowerCase().indexOf(q) !== -1)
+      })
+    }
+    if (procSortBy === "mem") {
+      list.sort(function(a, b) { return (b.mem || 0) - (a.mem || 0) })
+    } else {
+      list.sort(function(a, b) { return (b.cpu || 0) - (a.cpu || 0) })
+    }
+    return list
+  }
 
   property string fwName: "None"
   property bool fwActive: false
@@ -268,6 +311,9 @@ Panel {
       cores = data.cores || 1
       threads = data.threads || cores
       topProcs = data.top_procs || []
+      allProcs = data.all_procs || []
+      netProcs = data.net_procs || []
+      netConns = data.net_conns || []
 
       fwName = data.fw_name || "None"
       fwActive = data.fw_active === true
@@ -316,7 +362,7 @@ Panel {
     text: "\uf2db"
     labelText: root.showPercentage && !root.vertical ? (root.cpuPercent + "%") : ""
     slotSize: root.showPercentage && !root.vertical ? Style.bar.iconSlot * 2 : Style.bar.iconSlot
-    tooltipText: strings.t("sysmon.tooltip").arg(root.cpuPercent).arg(root.gpuPercent).arg(root.memPercent).arg(root.cpuTemp).arg(root.gpuTemp) + " (" + root.memUsedGb + "G / " + root.memTotalGb + "G)\n↓ " + root.netDownStr + "  ↑ " + root.netUpStr + (root.hasBattery ? ("\nBattery: " + root.batteryPercent + "% (" + root.batteryStatus + ")") : "") + "\nFirewall: " + (root.fwActive ? (root.fwName + " (Active)") : "Inactive") + " | " + root.connInbound + " in · " + root.connOutbound + " out"
+    tooltipText: strings.t("sysmon.tooltip").arg(root.cpuPercent).arg(root.gpuPercent).arg(root.memPercent) + " (" + root.memUsedGb + "G / " + root.memTotalGb + "G)\n↓ " + root.netDownStr + "  ↑ " + root.netUpStr + (root.hasBattery ? ("\nBattery: " + root.batteryPercent + "% (" + root.batteryStatus + ")") : "") + "\nFirewall: " + (root.fwActive ? (root.fwName + " (Active)") : "Inactive") + " | " + root.connInbound + " in · " + root.connOutbound + " out"
     active: root.opened || root.cpuPercent >= 85 || root.gpuPercent >= 85
     activeColor: (root.cpuPercent >= 85 || root.gpuPercent >= 85) ? root.urgentColor : root.accentColor
     onPressed: function(b) {
@@ -337,7 +383,7 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: panel.loadedContent
-    contentWidth: panel.fittedContentWidth(Style.space(340))
+    contentWidth: panel.fittedContentWidth(Style.space(360))
     contentHeight: panel.fittedContentHeight(panel.loadedContentHeight)
 
     content: PanelKeyCatcher {
@@ -352,9 +398,9 @@ Panel {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        spacing: Style.space(12)
+        spacing: Style.space(10)
 
-        // Hero header
+        // Hero Header
         Row {
           width: parent.width
           spacing: Style.space(12)
@@ -369,7 +415,7 @@ Panel {
           }
 
           Column {
-            width: Math.max(0, parent.width - Style.space(36))
+            width: Math.max(0, parent.width - Style.space(40))
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(2)
 
@@ -382,254 +428,628 @@ Panel {
               font.bold: true
             }
 
-            Row {
-              width: parent.width
-
-              Text {
-                textFormat: Text.PlainText
-                text: (root.threads > root.cores ? (root.cores + "C / " + root.threads + "T") : (root.cores + "C")) + " · " + strings.t("sysmon.load") + ": " + root.loadStr
-                color: root.foreground
-                opacity: 0.65
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
-                anchors.verticalCenter: parent.verticalCenter
-              }
-
-              Item {
-                width: Math.max(0, parent.width - parent.children[0].implicitWidth - netRatesRow.implicitWidth)
-                height: 1
-              }
-
-              Row {
-                id: netRatesRow
-                spacing: Style.space(8)
-                anchors.verticalCenter: parent.verticalCenter
-
-                Text {
-                  textFormat: Text.PlainText
-                  text: "↓ " + root.netDownStr
-                  color: root.accentColor
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.bodySmall
-                  font.bold: true
-                }
-                Text {
-                  textFormat: Text.PlainText
-                  text: "↑ " + root.netUpStr
-                  color: root.accentColor
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.bodySmall
-                  font.bold: true
-                }
-              }
+            Text {
+              textFormat: Text.PlainText
+              text: (root.threads > root.cores ? (root.cores + "C / " + root.threads + "T") : (root.cores + "C")) + " · " + strings.t("sysmon.load") + ": " + root.loadStr
+              color: root.foreground
+              opacity: 0.65
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
             }
           }
         }
 
-        PanelSeparator { foreground: root.foreground }
-
-        // Gauges
-        MetricBar {
-          label: strings.t("sysmon.cpu") + (root.cpuTemp > 0 ? (" (" + root.cpuTemp + "°C)") : "")
-          valueText: root.cpuPercent + "%"
-          fraction: root.cpuPercent / 100.0
-          urgentThreshold: 0.85
-        }
-
-        MetricBar {
-          label: strings.t("sysmon.gpu") + (root.gpuTemp > 0 ? (" (" + root.gpuTemp + "°C)") : "")
-          valueText: (root.gpuClock ? (root.gpuClock + " · ") : "") + root.gpuPercent + "%"
-          fraction: root.gpuPercent / 100.0
-          urgentThreshold: 0.85
-        }
-
-        MetricBar {
-          label: strings.t("sysmon.memory")
-          valueText: root.memUsedGb + " / " + root.memTotalGb + " GB (" + root.memPercent + "%)"
-          fraction: root.memPercent / 100.0
-          urgentThreshold: 0.85
-        }
-
-        MetricBar {
-          visible: Number(root.swapTotalGb) > 0
-          label: strings.t("sysmon.swap")
-          valueText: root.swapUsedGb + " / " + root.swapTotalGb + " GB (" + root.swapPercent + "%)"
-          fraction: root.swapPercent / 100.0
-          urgentThreshold: 0.85
-        }
-
-        MetricBar {
-          label: strings.t("sysmon.disk")
-          valueText: root.diskUsed + " / " + root.diskTotal + " (" + root.diskPercent + "%)"
-          fraction: root.diskPercent / 100.0
-          urgentThreshold: 0.90
-        }
-
-        // Battery Monitor Row
-        MetricBar {
-          visible: root.hasBattery
-          label: strings.t("sysmon.battery") + (root.batteryStatus ? (" (" + root.batteryStatus + ")") : "")
-          valueText: (Number(root.batteryPowerW) > 0 ? (root.batteryPowerW + "W · ") : "") + root.batteryPercent + "%"
-          fraction: root.batteryPercent / 100.0
-          urgentThreshold: 0.20
-          invertUrgent: true
-        }
-
-        // Security & Network Connections (Firewall & Active Sockets)
+        // Tabs Selector Row
         Row {
+          id: tabRow
           width: parent.width
-          spacing: Style.space(8)
+          spacing: Style.space(4)
 
-          // Firewall Status Card
-          Rectangle {
-            height: Style.space(26)
-            width: Math.floor((parent.width - Style.space(8)) / 2)
-            radius: Style.space(4)
-            color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
-            border.color: root.fwActive ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.35) : Qt.rgba(root.urgentColor.r, root.urgentColor.g, root.urgentColor.b, 0.35)
-            border.width: Style.normalBorderWidth
-
-            Row {
-              anchors.centerIn: parent
-              spacing: Style.space(6)
-
-              Text {
-                textFormat: Text.PlainText
-                text: root.fwActive ? "\uf132" : "\uf071"
-                color: root.fwActive ? root.accentColor : root.urgentColor
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
-                anchors.verticalCenter: parent.verticalCenter
-              }
-
-              Text {
-                textFormat: Text.PlainText
-                text: root.fwActive ? (root.fwName + ": Active") : "Firewall: Off"
-                color: root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
-                font.bold: true
-                anchors.verticalCenter: parent.verticalCenter
-              }
-            }
+          Button {
+            id: tab0Btn
+            width: Math.floor((parent.width - Style.space(8)) / 3)
+            text: strings.t("sysmon.tabOverview")
+            iconText: "\uf0e4"
+            selected: root.currentTab === 0
+            fontFamily: root.fontFamily
+            fontSize: Style.font.bodySmall
+            horizontalPadding: Style.space(4)
+            verticalPadding: Style.space(4)
+            bordered: true
+            tooltipText: "Resource overview gauges"
+            onClicked: root.currentTab = 0
           }
 
-          // Active Sockets Card
-          Rectangle {
-            height: Style.space(26)
-            width: parent.width - Math.floor((parent.width - Style.space(8)) / 2) - Style.space(8)
-            radius: Style.space(4)
-            color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
-            border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.12)
-            border.width: Style.normalBorderWidth
+          Button {
+            id: tab1Btn
+            width: Math.floor((parent.width - Style.space(8)) / 3)
+            text: strings.t("sysmon.tabProcesses")
+            iconText: "\uf0ae"
+            selected: root.currentTab === 1
+            fontFamily: root.fontFamily
+            fontSize: Style.font.bodySmall
+            horizontalPadding: Style.space(4)
+            verticalPadding: Style.space(4)
+            bordered: true
+            tooltipText: "Dedicated system processes list"
+            onClicked: root.currentTab = 1
+          }
 
-            Row {
-              anchors.centerIn: parent
-              spacing: Style.space(6)
-
-              Text {
-                textFormat: Text.PlainText
-                text: "\uf0ec"
-                color: root.accentColor
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
-                anchors.verticalCenter: parent.verticalCenter
-              }
-
-              Text {
-                textFormat: Text.PlainText
-                text: "↓ " + root.connInbound + " in  ·  ↑ " + root.connOutbound + " out"
-                color: root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
-                anchors.verticalCenter: parent.verticalCenter
-              }
-            }
+          Button {
+            id: tab2Btn
+            width: Math.floor((parent.width - Style.space(8)) / 3)
+            text: strings.t("sysmon.tabNetwork")
+            iconText: "\uf0c1"
+            selected: root.currentTab === 2
+            fontFamily: root.fontFamily
+            fontSize: Style.font.bodySmall
+            horizontalPadding: Style.space(4)
+            verticalPadding: Style.space(4)
+            bordered: true
+            tooltipText: "Network throughput and per-app sockets"
+            onClicked: root.currentTab = 2
           }
         }
 
         PanelSeparator { foreground: root.foreground }
 
-        // Top processes
+        // =================================================================
+        // TAB 0: OVERVIEW
+        // =================================================================
         Column {
+          id: tabOverviewColumn
+          visible: root.currentTab === 0
           width: parent.width
-          spacing: Style.space(6)
-          visible: root.topProcs.length > 0
+          spacing: Style.space(10)
 
-          PanelSectionHeader {
-            text: strings.t("sysmon.topProcs")
+          // Gauges
+          MetricBar {
+            label: strings.t("sysmon.cpu") + (root.cpuTemp > 0 ? (" (" + root.cpuTemp + "°C)") : "")
+            valueText: root.cpuPercent + "%"
+            fraction: root.cpuPercent / 100.0
+            urgentThreshold: 0.85
+          }
+
+          MetricBar {
+            label: strings.t("sysmon.gpu") + (root.gpuTemp > 0 ? (" (" + root.gpuTemp + "°C)") : "")
+            valueText: (root.gpuClock ? (root.gpuClock + " · ") : "") + root.gpuPercent + "%"
+            fraction: root.gpuPercent / 100.0
+            urgentThreshold: 0.85
+          }
+
+          MetricBar {
+            label: strings.t("sysmon.memory")
+            valueText: root.memUsedGb + " / " + root.memTotalGb + " GB (" + root.memPercent + "%)"
+            fraction: root.memPercent / 100.0
+            urgentThreshold: 0.85
+          }
+
+          MetricBar {
+            visible: Number(root.swapTotalGb) > 0
+            label: strings.t("sysmon.swap")
+            valueText: root.swapUsedGb + " / " + root.swapTotalGb + " GB (" + root.swapPercent + "%)"
+            fraction: root.swapPercent / 100.0
+            urgentThreshold: 0.85
+          }
+
+          MetricBar {
+            label: strings.t("sysmon.disk")
+            valueText: root.diskUsed + " / " + root.diskTotal + " (" + root.diskPercent + "%)"
+            fraction: root.diskPercent / 100.0
+            urgentThreshold: 0.90
+          }
+
+          // Battery Monitor Row
+          MetricBar {
+            visible: root.hasBattery
+            label: strings.t("sysmon.battery") + (root.batteryStatus ? (" (" + root.batteryStatus + ")") : "")
+            valueText: (Number(root.batteryPowerW) > 0 ? (root.batteryPowerW + "W · ") : "") + root.batteryPercent + "%"
+            fraction: root.batteryPercent / 100.0
+            urgentThreshold: 0.20
+            invertUrgent: true
+          }
+
+          PanelSeparator { foreground: root.foreground }
+
+          // Top processes preview
+          Column {
+            width: parent.width
+            spacing: Style.space(6)
+            visible: root.topProcs.length > 0
+
+            PanelSectionHeader {
+              text: strings.t("sysmon.topProcs")
+              foreground: root.foreground
+            }
+
+            Repeater {
+              model: root.topProcs
+              Item {
+                id: topProcRow
+                required property var modelData
+                width: parent.width
+                implicitHeight: Style.space(20)
+
+                Rectangle {
+                  anchors.fill: parent
+                  radius: Style.space(3)
+                  color: topRowMouse.containsMouse ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.08) : "transparent"
+                }
+
+                Text {
+                  textFormat: Text.PlainText
+                  text: modelData.name || ""
+                  elide: Text.ElideRight
+                  width: Style.space(130)
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  anchors.left: parent.left
+                  anchors.leftMargin: Style.space(4)
+                  anchors.verticalCenter: parent.verticalCenter
+                }
+
+                Text {
+                  textFormat: Text.PlainText
+                  text: (modelData.cpu || 0).toFixed(1) + "% CPU"
+                  color: (modelData.cpu || 0) > 20 ? root.urgentColor : root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  font.bold: (modelData.cpu || 0) > 20
+                  anchors.right: topRamLabel.left
+                  anchors.rightMargin: Style.space(12)
+                  anchors.verticalCenter: parent.verticalCenter
+                }
+
+                Text {
+                  id: topRamLabel
+                  textFormat: Text.PlainText
+                  text: (modelData.mem || 0).toFixed(1) + "% RAM"
+                  color: root.foreground
+                  opacity: 0.65
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  anchors.right: parent.right
+                  anchors.rightMargin: Style.space(4)
+                  anchors.verticalCenter: parent.verticalCenter
+                }
+
+                MouseArea {
+                  id: topRowMouse
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  acceptedButtons: Qt.RightButton
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: function(mouse) {
+                    if (mouse.button === Qt.RightButton) {
+                      topKillMenu.open()
+                    }
+                  }
+                }
+
+                Popup {
+                  id: topKillMenu
+                  x: Math.max(0, Math.min(topRowMouse.mouseX, topProcRow.width - width))
+                  y: Math.min(topRowMouse.mouseY, topProcRow.height)
+                  width: Style.space(150)
+                  padding: Style.space(4)
+                  closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+                  background: Rectangle {
+                    color: Commons.Color.popups.background
+                    border.color: Commons.Color.popups.border
+                    border.width: Style.normalBorderWidth
+                    radius: Style.space(6)
+                  }
+
+                  contentItem: Column {
+                    spacing: Style.space(3)
+
+                    Text {
+                      textFormat: Text.PlainText
+                      text: (modelData.name || "Process") + " (" + modelData.pid + ")"
+                      color: root.foreground
+                      opacity: 0.6
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.bodySmall - 1
+                      font.bold: true
+                      horizontalAlignment: Text.AlignHCenter
+                      width: parent.width
+                      elide: Text.ElideRight
+                    }
+
+                    Button {
+                      width: parent.width
+                      text: strings.t("sysmon.endProcess")
+                      iconText: "\uf00d"
+                      fontSize: Style.font.bodySmall
+                      horizontalPadding: Style.space(6)
+                      verticalPadding: Style.space(3)
+                      bordered: true
+                      onClicked: {
+                        root.killProcess(modelData.pid, false)
+                        topKillMenu.close()
+                      }
+                    }
+
+                    Button {
+                      width: parent.width
+                      text: strings.t("sysmon.forceKill")
+                      iconText: "\uf1f8"
+                      fontSize: Style.font.bodySmall
+                      foreground: root.urgentColor
+                      horizontalPadding: Style.space(6)
+                      verticalPadding: Style.space(3)
+                      bordered: true
+                      onClicked: {
+                        root.killProcess(modelData.pid, true)
+                        topKillMenu.close()
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          PanelSeparator {
+            visible: root.topProcs.length > 0
             foreground: root.foreground
           }
 
-          Repeater {
-            model: root.topProcs
-            Item {
-              id: procRow
-              required property var modelData
+          // Action button: Open System Monitor
+          Column {
+            width: parent.width
+            spacing: Style.space(6)
+
+            Button {
               width: parent.width
-              implicitHeight: Style.space(20)
+              text: strings.t("sysmon.openSystemMonitor")
+              iconText: root.getTopIcon(root.getSystemMonitorCmd())
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              horizontalPadding: Style.spacing.controlPaddingX
+              verticalPadding: Style.spacing.controlPaddingY
+              bordered: true
+              tooltipText: "Open " + root.getSystemMonitorName()
+              onClicked: root.launchSystemMonitor()
+            }
+
+            // If multiple advanced system monitors are installed, allow switching:
+            Row {
+              visible: root.advancedTops.length > 1
+              width: parent.width
+              spacing: Style.space(6)
+
+              Repeater {
+                model: root.advancedTops
+
+                Button {
+                  required property var modelData
+                  width: Math.floor((parent.width - ((root.advancedTops.length - 1) * Style.space(6))) / root.advancedTops.length)
+                  text: root.getTopLabel(modelData)
+                  iconText: root.getTopIcon(modelData)
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                  fontSize: Style.font.bodySmall
+                  selected: root.getSystemMonitorCmd() === modelData
+                  tooltipText: "Set " + root.getTopLabel(modelData) + " as default system monitor"
+                  horizontalPadding: Style.space(4)
+                  verticalPadding: Style.space(4)
+                  bordered: true
+                  onClicked: {
+                    root.setDefaultTop(modelData)
+                    root.launchSystemMonitor(modelData)
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // =================================================================
+        // TAB 1: DEDICATED PROCESSES LIST (SCROLLABLE)
+        // =================================================================
+        Column {
+          id: tabProcessesColumn
+          visible: root.currentTab === 1
+          width: parent.width
+          spacing: Style.space(8)
+
+          // Header Controls Row: Title, Count, Sort Buttons
+          Row {
+            width: parent.width
+            anchors.verticalCenter: undefined
+
+            Row {
+              spacing: Style.space(4)
+              anchors.verticalCenter: parent.verticalCenter
+
+              Text {
+                textFormat: Text.PlainText
+                text: strings.t("sysmon.allProcesses")
+                color: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+                font.bold: true
+                anchors.verticalCenter: parent.verticalCenter
+              }
+
+              Text {
+                textFormat: Text.PlainText
+                text: "(" + root.filteredProcs.length + ")"
+                color: root.foreground
+                opacity: 0.5
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                anchors.verticalCenter: parent.verticalCenter
+              }
+            }
+
+            Item {
+              width: Math.max(0, parent.width - parent.children[0].implicitWidth - sortRow.implicitWidth)
+              height: 1
+            }
+
+            Row {
+              id: sortRow
+              spacing: Style.space(4)
+              anchors.verticalCenter: parent.verticalCenter
+
+              Button {
+                text: "CPU"
+                selected: root.procSortBy === "cpu"
+                fontSize: Style.font.bodySmall - 1
+                horizontalPadding: Style.space(6)
+                verticalPadding: Style.space(2)
+                bordered: true
+                tooltipText: "Sort by CPU usage"
+                onClicked: root.procSortBy = "cpu"
+              }
+
+              Button {
+                text: "RAM"
+                selected: root.procSortBy === "mem"
+                fontSize: Style.font.bodySmall - 1
+                horizontalPadding: Style.space(6)
+                verticalPadding: Style.space(2)
+                bordered: true
+                tooltipText: "Sort by RAM usage"
+                onClicked: root.procSortBy = "mem"
+              }
+            }
+          }
+
+          // Search / Filter Input Field
+          Rectangle {
+            width: parent.width
+            height: Style.space(26)
+            radius: Style.space(4)
+            color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.08)
+            border.color: searchInput.activeFocus ? root.accentColor : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.15)
+            border.width: 1
+
+            Row {
+              anchors.fill: parent
+              anchors.leftMargin: Style.space(8)
+              anchors.rightMargin: Style.space(8)
+              spacing: Style.space(6)
+
+              Text {
+                textFormat: Text.PlainText
+                text: "\uf002"
+                color: root.foreground
+                opacity: 0.5
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                anchors.verticalCenter: parent.verticalCenter
+              }
+
+              TextInput {
+                id: searchInput
+                width: parent.width - Style.space(24)
+                color: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                anchors.verticalCenter: parent.verticalCenter
+                selectByMouse: true
+                onTextChanged: root.procSearch = text
+
+                Text {
+                  text: "Filter processes..."
+                  color: root.foreground
+                  opacity: 0.35
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  visible: !searchInput.text && !searchInput.activeFocus
+                  anchors.verticalCenter: parent.verticalCenter
+                }
+              }
+            }
+          }
+
+          // Table Column Headers
+          Row {
+            width: parent.width
+
+            Text {
+              textFormat: Text.PlainText
+              text: "PROCESS / PID"
+              width: Style.space(170)
+              color: root.foreground
+              opacity: 0.45
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall - 2
+              font.bold: true
+              anchors.verticalCenter: parent.verticalCenter
+            }
+
+            Item {
+              width: Math.max(0, parent.width - Style.space(170) - Style.space(75) - Style.space(65))
+              height: 1
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              text: "CPU"
+              width: Style.space(75)
+              horizontalAlignment: Text.AlignRight
+              color: root.foreground
+              opacity: 0.45
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall - 2
+              font.bold: true
+              anchors.verticalCenter: parent.verticalCenter
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              text: "RAM"
+              width: Style.space(65)
+              horizontalAlignment: Text.AlignRight
+              color: root.foreground
+              opacity: 0.45
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall - 2
+              font.bold: true
+              anchors.verticalCenter: parent.verticalCenter
+            }
+          }
+
+          // Dedicated Scrollable Processes List
+            ListView {
+              id: procListView
+              width: parent.width
+              height: Math.min(contentHeight, Style.space(310))
+              implicitHeight: height
+              spacing: Style.space(2)
+              clip: true
+              boundsBehavior: Flickable.StopAtBounds
+              flickableDirection: Flickable.VerticalFlick
+              interactive: contentHeight > height
+
+              ScrollBar.vertical: ScrollBar {
+                policy: procListView.contentHeight > procListView.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+              }
+
+              model: root.filteredProcs
+
+              delegate: Item {
+                id: procItemRow
+                required property var modelData
+                required property int index
+                width: procListView.contentHeight > procListView.height ? (ListView.view.width - Style.space(8)) : ListView.view.width
+                implicitHeight: Style.space(22)
 
               Rectangle {
                 anchors.fill: parent
                 radius: Style.space(3)
-                color: rowMouse.containsMouse ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.08) : "transparent"
+                color: itemMouse.containsMouse ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.08) : "transparent"
               }
 
-              Text {
-                textFormat: Text.PlainText
-                text: modelData.name || ""
-                elide: Text.ElideRight
-                width: Style.space(130)
-                color: root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
-                anchors.left: parent.left
+              Row {
+                anchors.fill: parent
                 anchors.leftMargin: Style.space(4)
-                anchors.verticalCenter: parent.verticalCenter
-              }
-
-              Text {
-                textFormat: Text.PlainText
-                text: (modelData.cpu || 0).toFixed(1) + "% CPU"
-                color: (modelData.cpu || 0) > 20 ? root.urgentColor : root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
-                font.bold: (modelData.cpu || 0) > 20
-                anchors.right: ramLabel.left
-                anchors.rightMargin: Style.space(12)
-                anchors.verticalCenter: parent.verticalCenter
-              }
-
-              Text {
-                id: ramLabel
-                textFormat: Text.PlainText
-                text: (modelData.mem || 0).toFixed(1) + "% RAM"
-                color: root.foreground
-                opacity: 0.65
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
-                anchors.right: parent.right
                 anchors.rightMargin: Style.space(4)
                 anchors.verticalCenter: parent.verticalCenter
+
+                Row {
+                  width: Style.space(170)
+                  spacing: Style.space(4)
+                  anchors.verticalCenter: parent.verticalCenter
+
+                  Text {
+                    textFormat: Text.PlainText
+                    text: modelData.name || ""
+                    elide: Text.ElideRight
+                    maximumLineCount: 1
+                    width: Math.min(implicitWidth, Style.space(110))
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    font.bold: (modelData.cpu || 0) > 10
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+
+                  Text {
+                    textFormat: Text.PlainText
+                    text: modelData.pid ? ("#" + modelData.pid) : ""
+                    color: root.foreground
+                    opacity: 0.4
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall - 2
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+
+                  // Non-user badge (e.g. root)
+                  Rectangle {
+                    visible: modelData.user && modelData.user !== "dilkhush" && modelData.user !== ""
+                    width: userBadgeLabel.implicitWidth + Style.space(4)
+                    height: Style.space(14)
+                    radius: Style.space(2)
+                    color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.12)
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    Text {
+                      id: userBadgeLabel
+                      textFormat: Text.PlainText
+                      text: modelData.user || ""
+                      color: root.foreground
+                      opacity: 0.7
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.bodySmall - 3
+                      anchors.centerIn: parent
+                    }
+                  }
+                }
+
+                Item {
+                  width: Math.max(0, parent.width - Style.space(170) - Style.space(75) - Style.space(65))
+                  height: 1
+                }
+
+                Text {
+                  textFormat: Text.PlainText
+                  text: (modelData.cpu || 0).toFixed(1) + "%"
+                  width: Style.space(75)
+                  horizontalAlignment: Text.AlignRight
+                  color: (modelData.cpu || 0) > 20 ? root.urgentColor : root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  font.bold: (modelData.cpu || 0) > 20
+                  anchors.verticalCenter: parent.verticalCenter
+                }
+
+                Text {
+                  textFormat: Text.PlainText
+                  text: (modelData.mem || 0).toFixed(1) + "%"
+                  width: Style.space(65)
+                  horizontalAlignment: Text.AlignRight
+                  color: root.foreground
+                  opacity: 0.65
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  anchors.verticalCenter: parent.verticalCenter
+                }
               }
 
               MouseArea {
-                id: rowMouse
+                id: itemMouse
                 anchors.fill: parent
                 hoverEnabled: true
                 acceptedButtons: Qt.RightButton
                 cursorShape: Qt.PointingHandCursor
                 onClicked: function(mouse) {
                   if (mouse.button === Qt.RightButton) {
-                    killMenu.open()
+                    itemKillMenu.open()
                   }
                 }
               }
 
               Popup {
-                id: killMenu
-                x: Math.max(0, Math.min(rowMouse.mouseX, procRow.width - width))
-                y: Math.min(rowMouse.mouseY, procRow.height)
+                id: itemKillMenu
+                x: Math.max(0, Math.min(itemMouse.mouseX, procItemRow.width - width))
+                y: Math.min(itemMouse.mouseY, procItemRow.height)
                 width: Style.space(150)
                 padding: Style.space(4)
                 closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
@@ -659,7 +1079,7 @@ Panel {
 
                   Button {
                     width: parent.width
-                    text: "End Process"
+                    text: strings.t("sysmon.endProcess")
                     iconText: "\uf00d"
                     fontSize: Style.font.bodySmall
                     horizontalPadding: Style.space(6)
@@ -667,13 +1087,13 @@ Panel {
                     bordered: true
                     onClicked: {
                       root.killProcess(modelData.pid, false)
-                      killMenu.close()
+                      itemKillMenu.close()
                     }
                   }
 
                   Button {
                     width: parent.width
-                    text: "Force Kill"
+                    text: strings.t("sysmon.forceKill")
                     iconText: "\uf1f8"
                     fontSize: Style.font.bodySmall
                     foreground: root.urgentColor
@@ -682,64 +1102,440 @@ Panel {
                     bordered: true
                     onClicked: {
                       root.killProcess(modelData.pid, true)
-                      killMenu.close()
+                      itemKillMenu.close()
                     }
                   }
                 }
               }
             }
           }
-        }
 
-        PanelSeparator {
-          visible: root.topProcs.length > 0
-          foreground: root.foreground
-        }
-
-        // Action button: Open System Monitor
-        Column {
-          width: parent.width
-          spacing: Style.space(6)
-
-          Button {
+          // Empty state text
+          Text {
+            visible: root.filteredProcs.length === 0
+            text: "No matching processes found"
+            color: root.foreground
+            opacity: 0.4
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            horizontalAlignment: Text.AlignHCenter
             width: parent.width
-            text: strings.t("sysmon.openSystemMonitor")
-            iconText: root.getTopIcon(root.getSystemMonitorCmd())
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            horizontalPadding: Style.spacing.controlPaddingX
-            verticalPadding: Style.spacing.controlPaddingY
-            bordered: true
-            tooltipText: "Open " + root.getSystemMonitorName()
-            onClicked: root.launchSystemMonitor()
+          }
+        }
+
+        // =================================================================
+        // TAB 2: NETWORK MONITOR (THROUGHPUT, BANDWIDTH, CONNECTIONS)
+        // =================================================================
+        Column {
+          id: tabNetworkColumn
+          visible: root.currentTab === 2
+          width: parent.width
+          spacing: Style.space(10)
+
+          // Network Traffic Card
+          Rectangle {
+            width: parent.width
+            implicitHeight: netTrafficCol.implicitHeight + Style.space(20)
+            radius: Style.space(6)
+            color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.05)
+            border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.1)
+            border.width: 1
+
+            Column {
+              id: netTrafficCol
+              anchors.fill: parent
+              anchors.margins: Style.space(10)
+              spacing: Style.space(10)
+
+              // Header: Interface & Firewall Pill
+              Item {
+                width: parent.width
+                implicitHeight: Math.max(ifaceRow.implicitHeight, fwPill.implicitHeight)
+
+                Row {
+                  id: ifaceRow
+                  anchors.left: parent.left
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(6)
+
+                  Text {
+                    textFormat: Text.PlainText
+                    text: "\uf1eb"
+                    color: root.accentColor
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+
+                  Text {
+                    textFormat: Text.PlainText
+                    text: root.netInterface ? root.netInterface : "Network"
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    font.bold: true
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+                }
+
+                Rectangle {
+                  id: fwPill
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  width: fwRow.implicitWidth + Style.space(10)
+                  implicitHeight: Style.space(20)
+                  height: implicitHeight
+                  radius: Style.space(4)
+                  color: root.fwActive ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.15) : Qt.rgba(root.urgentColor.r, root.urgentColor.g, root.urgentColor.b, 0.15)
+
+                  Row {
+                    id: fwRow
+                    spacing: Style.space(4)
+                    anchors.centerIn: parent
+
+                    Text {
+                      textFormat: Text.PlainText
+                      text: root.fwActive ? "\uf023" : "\uf071"
+                      color: root.fwActive ? root.accentColor : root.urgentColor
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.bodySmall - 1
+                      anchors.verticalCenter: parent.verticalCenter
+                    }
+
+                    Text {
+                      textFormat: Text.PlainText
+                      text: root.fwActive ? (root.fwName + " Active") : "Firewall Off"
+                      color: root.fwActive ? root.accentColor : root.urgentColor
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.bodySmall - 1
+                      font.bold: true
+                      anchors.verticalCenter: parent.verticalCenter
+                    }
+                  }
+                }
+              }
+
+              // Speed Rates & Cumulative Transfer
+              Row {
+                width: parent.width
+
+                Column {
+                  width: Math.floor(parent.width / 2)
+                  spacing: Style.space(3)
+
+                  Text {
+                    textFormat: Text.PlainText
+                    text: "DOWNLOAD"
+                    color: root.foreground
+                    opacity: 0.5
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall - 2
+                    font.bold: true
+                  }
+
+                  Text {
+                    textFormat: Text.PlainText
+                    text: "↓ " + root.netDownStr
+                    color: root.accentColor
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.title
+                    font.bold: true
+                  }
+
+                  Text {
+                    textFormat: Text.PlainText
+                    text: strings.t("sysmon.netTotal") + ": " + root.netRxTotalStr
+                    color: root.foreground
+                    opacity: 0.65
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall - 1
+                  }
+                }
+
+                Column {
+                  width: Math.floor(parent.width / 2)
+                  spacing: Style.space(3)
+
+                  Text {
+                    textFormat: Text.PlainText
+                    text: "UPLOAD"
+                    color: root.foreground
+                    opacity: 0.5
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall - 2
+                    font.bold: true
+                  }
+
+                  Text {
+                    textFormat: Text.PlainText
+                    text: "↑ " + root.netUpStr
+                    color: root.accentColor
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.title
+                    font.bold: true
+                  }
+
+                  Text {
+                    textFormat: Text.PlainText
+                    text: strings.t("sysmon.netTotal") + ": " + root.netTxTotalStr
+                    color: root.foreground
+                    opacity: 0.65
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall - 1
+                  }
+                }
+              }
+            }
           }
 
-          // If multiple advanced system monitors are installed, allow switching:
-          Row {
-            visible: root.advancedTops.length > 1
+          // Active Sockets / Connections Card
+          Rectangle {
             width: parent.width
-            spacing: Style.space(6)
+            implicitHeight: connCardCol.implicitHeight + Style.space(20)
+            radius: Style.space(6)
+            color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.05)
+            border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.1)
+            border.width: 1
 
-            Repeater {
-              model: root.advancedTops
+            Column {
+              id: connCardCol
+              anchors.fill: parent
+              anchors.margins: Style.space(10)
+              spacing: Style.space(8)
 
-              Button {
-                required property var modelData
-                width: Math.floor((parent.width - ((root.advancedTops.length - 1) * Style.space(6))) / root.advancedTops.length)
-                text: root.getTopLabel(modelData)
-                iconText: root.getTopIcon(modelData)
+              PanelSectionHeader {
+                text: strings.t("sysmon.connections")
                 foreground: root.foreground
-                fontFamily: root.fontFamily
-                fontSize: Style.font.bodySmall
-                selected: root.getSystemMonitorCmd() === modelData
-                tooltipText: "Set " + root.getTopLabel(modelData) + " as default system monitor"
-                horizontalPadding: Style.space(4)
-                verticalPadding: Style.space(4)
-                bordered: true
-                onClicked: {
-                  root.setDefaultTop(modelData)
-                  root.launchSystemMonitor(modelData)
+              }
+
+              Row {
+                width: parent.width
+
+                Column {
+                  width: Math.floor(parent.width / 3)
+                  spacing: Style.space(3)
+
+                  Text {
+                    textFormat: Text.PlainText
+                    text: "OUTBOUND"
+                    color: root.foreground
+                    opacity: 0.5
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall - 2
+                    font.bold: true
+                  }
+
+                  Text {
+                    textFormat: Text.PlainText
+                    text: "↑ " + root.connOutbound
+                    color: root.accentColor
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.title
+                    font.bold: true
+                  }
                 }
+
+                Column {
+                  width: Math.floor(parent.width / 3)
+                  spacing: Style.space(3)
+
+                  Text {
+                    textFormat: Text.PlainText
+                    text: "INBOUND"
+                    color: root.foreground
+                    opacity: 0.5
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall - 2
+                    font.bold: true
+                  }
+
+                  Text {
+                    textFormat: Text.PlainText
+                    text: "↓ " + root.connInbound
+                    color: root.connInbound > 0 ? root.urgentColor : root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.title
+                    font.bold: true
+                  }
+                }
+
+                Column {
+                  width: Math.floor(parent.width / 3)
+                  spacing: Style.space(3)
+
+                  Text {
+                    textFormat: Text.PlainText
+                    text: "LISTEN"
+                    color: root.foreground
+                    opacity: 0.5
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall - 2
+                    font.bold: true
+                  }
+
+                  Text {
+                    textFormat: Text.PlainText
+                    text: String(root.listenCount)
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.title
+                    font.bold: true
+                  }
+                }
+              }
+            }
+          }
+
+          // Active Apps Using Network Card
+          Rectangle {
+            width: parent.width
+            implicitHeight: netAppsCol.implicitHeight + Style.space(20)
+            radius: Style.space(6)
+            color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.05)
+            border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.1)
+            border.width: 1
+
+            Column {
+              id: netAppsCol
+              anchors.fill: parent
+              anchors.margins: Style.space(10)
+              spacing: Style.space(8)
+
+              PanelSectionHeader {
+                text: strings.t("sysmon.netApps")
+                foreground: root.foreground
+              }
+
+              ListView {
+                id: netAppsListView
+                width: parent.width
+                height: root.netProcs.length > 3 ? (Style.space(26) * 3 + Style.space(8)) : contentHeight
+                implicitHeight: height
+                spacing: Style.space(4)
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                flickableDirection: Flickable.VerticalFlick
+                interactive: root.netProcs.length > 3
+
+                ScrollBar.vertical: ScrollBar {
+                  policy: root.netProcs.length > 3 ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+                }
+
+                model: root.netProcs
+
+                delegate: Item {
+                  id: netAppRow
+                  required property var modelData
+                  required property int index
+                  width: root.netProcs.length > 3 ? (ListView.view.width - Style.space(8)) : ListView.view.width
+                  implicitHeight: Style.space(26)
+
+                  Rectangle {
+                    anchors.fill: parent
+                    radius: Style.space(4)
+                    color: netAppHover.containsMouse ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.08) : "transparent"
+                  }
+
+                  MouseArea {
+                    id: netAppHover
+                    anchors.fill: parent
+                    hoverEnabled: true
+                  }
+
+                  Item {
+                    anchors.fill: parent
+                    anchors.leftMargin: Style.space(6)
+                    anchors.rightMargin: root.netProcs.length > 3 ? Style.space(12) : Style.space(6)
+
+                    Row {
+                      anchors.left: parent.left
+                      anchors.verticalCenter: parent.verticalCenter
+                      spacing: Style.space(8)
+
+                      Text {
+                        textFormat: Text.PlainText
+                        text: root.getAppIcon(modelData.name)
+                        color: root.accentColor
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.bodySmall
+                        anchors.verticalCenter: parent.verticalCenter
+                      }
+
+                      Text {
+                        textFormat: Text.PlainText
+                        text: modelData.name || "Unknown"
+                        color: root.foreground
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.bodySmall
+                        font.bold: true
+                        elide: Text.ElideRight
+                        maximumLineCount: 1
+                        width: Math.min(implicitWidth, Style.space(150))
+                        anchors.verticalCenter: parent.verticalCenter
+                      }
+                    }
+
+                    Row {
+                      id: appBadgeRow
+                      anchors.right: parent.right
+                      anchors.verticalCenter: parent.verticalCenter
+                      spacing: Style.space(6)
+
+                      // Outbound badge
+                      Rectangle {
+                        visible: (modelData.out || 0) > 0
+                        width: appOutBadgeText.implicitWidth + Style.space(10)
+                        height: Style.space(18)
+                        radius: Style.space(3)
+                        color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.15)
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        Text {
+                          id: appOutBadgeText
+                          textFormat: Text.PlainText
+                          text: "↑ " + modelData.out + " out"
+                          color: root.accentColor
+                          font.family: root.fontFamily
+                          font.pixelSize: Style.font.bodySmall - 2
+                          font.bold: true
+                          anchors.centerIn: parent
+                        }
+                      }
+
+                      // Inbound badge
+                      Rectangle {
+                        visible: (modelData.in || 0) > 0
+                        width: appInBadgeText.implicitWidth + Style.space(10)
+                        height: Style.space(18)
+                        radius: Style.space(3)
+                        color: Qt.rgba(root.urgentColor.r, root.urgentColor.g, root.urgentColor.b, 0.15)
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        Text {
+                          id: appInBadgeText
+                          textFormat: Text.PlainText
+                          text: "↓ " + modelData.in + " in"
+                          color: root.urgentColor
+                          font.family: root.fontFamily
+                          font.pixelSize: Style.font.bodySmall - 2
+                          font.bold: true
+                          anchors.centerIn: parent
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+
+              Text {
+                visible: root.netProcs.length === 0
+                text: strings.t("sysmon.noNetApps")
+                color: root.foreground
+                opacity: 0.45
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                horizontalAlignment: Text.AlignHCenter
+                width: parent.width
               }
             }
           }

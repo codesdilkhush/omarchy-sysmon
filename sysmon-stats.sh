@@ -230,40 +230,80 @@ elif [[ -f /etc/ufw/ufw.conf ]] && grep -q '^ENABLED=yes' /etc/ufw/ufw.conf 2>/d
   fw_active=true
 fi
 
-# Active network socket connections (inbound vs outbound)
+printf '"fw_name": "%s", "fw_active": %s, ' "$fw_name" "$fw_active"
+
+# Network sockets stats and active network applications (unprivileged)
 conn_in=0
 conn_out=0
 listen_count=0
-if command -v ss &>/dev/null; then
-  listen_ports=$(ss -H -t -l -n 2>/dev/null | awk '{print $4}' | awk -F: '{print $NF}' | sort -u || true)
-  if [[ -n "$listen_ports" ]]; then
-    listen_count=$(echo "$listen_ports" | grep -c . || echo 0)
-  fi
+net_procs_json="[]"
 
-  read -r conn_in conn_out < <(awk -v lp="${listen_ports:-}" '
+if command -v ss &>/dev/null; then
+  listen_ports=$(ss -H -t -u -l -n 2>/dev/null | awk '{print $4}' | awk -F: '{print $NF}' | sort -u || true)
+  listen_count=$(echo "$listen_ports" | grep -c . || echo 0)
+
+  eval "$(ss -H -t -u -p -n state established 2>/dev/null | awk -v lp="${listen_ports:-}" '
+  function friendly_name(pname) {
+    if (pname == "agy") return "Antigravity"
+    if (pname == "chromium" || pname == "chrome" || pname == "google-chrome") return "Google Chrome"
+    if (pname == "firefox") return "Firefox"
+    if (pname == "spotify") return "Spotify"
+    if (pname == "discord" || pname == "Discord") return "Discord"
+    if (pname == "slack") return "Slack"
+    if (pname == "telegram-desktop") return "Telegram"
+    if (pname == "code" || pname == "codium") return "VS Code"
+    if (pname == "zed") return "Zed"
+    if (pname == "steam") return "Steam"
+    if (pname == "foot") return "Terminal"
+    if (pname == "alacritty" || pname == "kitty") return "Terminal"
+    if (pname == "superwhisper" || pname == "superwhisper-in" || pname == "asr-worker") return "Superwhisper"
+    if (pname == "quickshell") return "Omarchy Shell"
+    if (pname == "omadoc") return "Omarchy Docs"
+    if (pname == "pipewire" || pname == "pipewire-pulse") return "PipeWire"
+    if (pname == "wireplumber") return "WirePlumber"
+    if (pname == "systemd-resolved" || pname == "NetworkManager") return "NetworkManager"
+    if (pname == "system" || pname == "systemd-oomd") return "System Services"
+    return toupper(substr(pname, 1, 1)) substr(pname, 2)
+  }
   BEGIN {
     split(lp, ports, RS)
     for (i in ports) if (ports[i] != "") is_listen[ports[i]] = 1
-    inbound = 0
-    outbound = 0
+    cin = 0
+    cout = 0
   }
   NF >= 4 {
     n = split($4, a, ":")
     local_port = a[n]
-    if (local_port in is_listen) {
-      inbound++
-    } else {
-      outbound++
+    is_in = (local_port in is_listen)
+    if (is_in) cin++; else cout++
+
+    pname = ""
+    for (i=5; i<=NF; i++) {
+      if ($i ~ /users:\(\(/) {
+        match($i, /users:\(\("([^"]+)"/, m)
+        if (m[1] != "") pname = m[1]
+        break
+      }
+    }
+    if (pname != "") {
+      fn = friendly_name(pname)
+      comm_map[fn] = pname
+      tot[fn]++
+      if (is_in) in_cnt[fn]++; else out_cnt[fn]++
     }
   }
   END {
-    print inbound, outbound
-  }
-  ' <(ss -H -t -n state established 2>/dev/null || true) || echo "0 0")
+    procs = ""
+    for (fn in tot) {
+      item = sprintf("{\\\"name\\\": \\\"%s\\\", \\\"comm\\\": \\\"%s\\\", \\\"conns\\\": %d, \\\"out\\\": %d, \\\"in\\\": %d}", fn, comm_map[fn], tot[fn], out_cnt[fn], in_cnt[fn])
+      procs = (procs == "" ? item : procs ", " item)
+    }
+    printf "conn_in=%d\nconn_out=%d\nnet_procs_json=\"[%s]\"\n", cin, cout, procs
+  }')"
 fi
 
-printf '"fw_name": "%s", "fw_active": %s, "conn_inbound": %d, "conn_outbound": %d, "conn_total": %d, "listen_count": %d, ' \
-  "$fw_name" "$fw_active" "${conn_in:-0}" "${conn_out:-0}" "$(( ${conn_in:-0} + ${conn_out:-0} ))" "${listen_count:-0}"
+printf '"conn_inbound": %d, "conn_outbound": %d, "conn_total": %d, "listen_count": %d, "net_procs": %s, ' \
+  "${conn_in:-0}" "${conn_out:-0}" "$(( ${conn_in:-0} + ${conn_out:-0} ))" "${listen_count:-0}" "${net_procs_json:-[]}"
 
 # Detect installed/available top tools dynamically
 available_tops=()
@@ -275,12 +315,58 @@ done
 tops_json=$(IFS=, ; echo "[${available_tops[*]}]")
 printf '"available_tops": %s, ' "$tops_json"
 
-# Top 3 processes by CPU
-echo -n '"top_procs": ['
-ps -eo pid,comm,%cpu,%mem --sort=-%cpu | awk '
-NR>1 && NR<=4 {
-  if (NR>2) printf ", "
-  printf "{\"pid\": %s, \"name\": \"%s\", \"cpu\": %.1f, \"mem\": %.1f}", $1, $2, $3, $4
+# Processes: top 3 and all active processes (up to 50 non-kernel processes)
+ps -eo pid,ppid,user,comm,%cpu,%mem --sort=-%cpu 2>/dev/null | awk '
+function friendly_name(pname) {
+  if (pname == "agy") return "Antigravity"
+  if (pname == "chromium" || pname == "chrome" || pname == "google-chrome") return "Google Chrome"
+  if (pname == "firefox") return "Firefox"
+  if (pname == "spotify") return "Spotify"
+  if (pname == "discord" || pname == "Discord") return "Discord"
+  if (pname == "slack") return "Slack"
+  if (pname == "telegram-desktop") return "Telegram"
+  if (pname == "code" || pname == "codium") return "VS Code"
+  if (pname == "zed") return "Zed"
+  if (pname == "steam") return "Steam"
+  if (pname == "foot") return "Terminal"
+  if (pname == "alacritty" || pname == "kitty") return "Terminal"
+  if (pname == "superwhisper" || pname == "superwhisper-in" || pname == "asr-worker") return "Superwhisper"
+  if (pname == "quickshell") return "Omarchy Shell"
+  if (pname == "omadoc") return "Omarchy Docs"
+  if (pname == "pipewire" || pname == "pipewire-pulse") return "PipeWire"
+  if (pname == "wireplumber") return "WirePlumber"
+  if (pname == "systemd-resolved" || pname == "NetworkManager") return "NetworkManager"
+  if (pname == "system" || pname == "systemd-oomd") return "System Services"
+  return toupper(substr(pname, 1, 1)) substr(pname, 2)
+}
+BEGIN {
+  top_str = ""
+  all_str = ""
+  count = 0
+}
+NR > 1 {
+  pid = $1
+  ppid = $2
+  user = $3
+  comm = $4
+  cpu = $5
+  mem = $6
+
+  # Filter kernel threads
+  if (ppid == 2 || pid == 2) next
+
+  fname = friendly_name(comm)
+  count++
+
+  item = sprintf("{\"pid\": %s, \"user\": \"%s\", \"comm\": \"%s\", \"name\": \"%s\", \"cpu\": %.1f, \"mem\": %.1f}", pid, user, comm, fname, cpu, mem)
+  if (count <= 3) {
+    top_str = (top_str == "" ? item : top_str ", " item)
+  }
+  if (count <= 50) {
+    all_str = (all_str == "" ? item : all_str ", " item)
+  }
+}
+END {
+  printf "\"top_procs\": [%s], \"all_procs\": [%s]}\n", top_str, all_str
 }
 '
-echo ']}'
