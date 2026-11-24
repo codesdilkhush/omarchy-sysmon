@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "codesdilkhush.sysmon",
+  "name": "System Monitor",
+  "version": "1.0.0",
+  "author": "Dilkhush",
+  "license": "MIT",
+  "description": "Real-time CPU and memory monitor with detailed popup card and btop launcher",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "System Monitor",
+    "description": "Real-time CPU, RAM, and Disk resource status with detail popup",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
