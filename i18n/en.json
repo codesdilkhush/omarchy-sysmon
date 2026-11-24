@@ -1,15 +1,16 @@
 {
   "sysmon.title": "System Monitor",
   "sysmon.cpu": "CPU",
+  "sysmon.gpu": "GPU",
   "sysmon.memory": "Memory",
   "sysmon.swap": "Swap",
   "sysmon.disk": "Disk (/)",
   "sysmon.load": "Load",
   "sysmon.topProcs": "Top Processes",
-  "sysmon.openBtop": "Open Task Manager (btop)",
+  "sysmon.openSystemManager": "Open System Manager",
   "sysmon.cores": {
     "one": "%1 Core",
     "other": "%1 Cores"
   },
-  "sysmon.tooltip": "CPU: %1% | RAM: %2%"
+  "sysmon.tooltip": "CPU: %1% | GPU: %2% | RAM: %3%"
 }

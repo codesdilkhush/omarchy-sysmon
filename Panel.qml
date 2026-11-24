@@ -10,7 +10,7 @@ import qs.Ui
 Panel {
   id: root
   moduleName: "codesdilkhush.sysmon"
-  ipcTarget: "codesdilkhush.sysmon"
+  ipcTarget: ""
   manageIpc: false
 
   implicitWidth: button.implicitWidth
@@ -22,6 +22,10 @@ Panel {
   readonly property color accentColor: Commons.Color.accent
   readonly property string fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
   property bool showPercentage: setting("showPercentage", false) === true
+  property string defaultTop: setting("defaultTop", "btop")
+
+  property var availableTops: ["btop"]
+  readonly property var advancedTops: availableTops.filter(function(t) { return t !== "top" || availableTops.length === 1 })
 
   function togglePercentage() {
     showPercentage = !showPercentage
@@ -29,14 +33,71 @@ Panel {
     if (root.bar && root.bar.shell) root.bar.shell.updateEntryInline(root.moduleName, root.settings)
   }
 
+  function isAvailable(cmd) {
+    return availableTops && availableTops.indexOf(cmd) !== -1
+  }
+
+  function getSystemManagerCmd() {
+    if (defaultTop && isAvailable(defaultTop)) {
+      return defaultTop
+    }
+    var preference = ["btop", "htop", "btm", "top"]
+    for (var i = 0; i < preference.length; i++) {
+      if (isAvailable(preference[i])) return preference[i]
+    }
+    return availableTops.length > 0 ? availableTops[0] : "btop"
+  }
+
+  function getSystemManagerName() {
+    var cmd = getSystemManagerCmd()
+    if (cmd === "btm") return "bottom"
+    return cmd
+  }
+
+  function getTopLabel(cmd) {
+    if (cmd === "btm") return "bottom"
+    return cmd
+  }
+
+  function getTopIcon(cmd) {
+    if (cmd === "htop") return "\uf0ae"
+    if (cmd === "btm" || cmd === "bottom") return "\uf1fe"
+    if (cmd === "top") return "\uf120"
+    return "\uf080" // btop
+  }
+
+  function setDefaultTop(cmd) {
+    if (!cmd) return
+    defaultTop = cmd
+    root.settings = Object.assign({}, root.settings, { defaultTop: cmd })
+    if (root.bar && root.bar.shell) root.bar.shell.updateEntryInline(root.moduleName, root.settings)
+  }
+
+  function launchSystemManager(cmd) {
+    root.close()
+    var target = cmd || getSystemManagerCmd()
+    if (root.bar && typeof root.bar.run === "function") {
+      root.bar.run("omarchy launch or focus tui " + target)
+    } else {
+      Quickshell.execDetached(["omarchy", "launch", "or", "focus", "tui", target])
+    }
+  }
+
+  function openBtop() {
+    launchSystemManager()
+  }
+
   ShellIpc {
-    target: "codesdilkhush.sysmon"
+    target: root.moduleName
     function open(): void { root.open() }
     function close(): void { root.close() }
     function show(): void { root.open() }
     function hide(): void { root.close() }
     function toggle(): void { root.toggle() }
     function togglePercentage(): void { root.togglePercentage() }
+    function openSystemManager(): void { root.launchSystemManager() }
+    function launch(monitor: string): void { root.launchSystemManager(monitor) }
+    function setDefault(monitor: string): void { root.setDefaultTop(monitor) }
   }
 
   Commons.Translations {
@@ -47,6 +108,12 @@ Panel {
   property int cpuPercent: 0
   property real prevCpuIdle: 0
   property real prevCpuTotal: 0
+
+  property int gpuPercent: 0
+  property string gpuName: "GPU"
+  property string gpuClock: ""
+  property real prevGpuRc6: 0
+  property real prevGpuTime: 0
 
   property string memUsedGb: "0.0"
   property string memTotalGb: "0.0"
@@ -78,6 +145,28 @@ Panel {
       prevCpuIdle = data.cpu_idle
       prevCpuTotal = data.cpu_total
 
+      gpuName = data.gpu_name || "GPU"
+      gpuClock = data.gpu_clock || ""
+
+      if (data.gpu_pct !== undefined && data.gpu_pct > 0) {
+        gpuPercent = Math.max(0, Math.min(100, Math.round(data.gpu_pct)))
+      } else if (data.gpu_rc6_ms !== undefined && data.gpu_timestamp_ms !== undefined) {
+        if (prevGpuTime > 0 && data.gpu_timestamp_ms > prevGpuTime) {
+          var dt = data.gpu_timestamp_ms - prevGpuTime
+          var dRc6 = data.gpu_rc6_ms - prevGpuRc6
+          if (dt > 0 && dRc6 >= 0) {
+            var idleFraction = Math.min(1.0, Math.max(0.0, dRc6 / dt))
+            gpuPercent = Math.max(0, Math.min(100, Math.round((1.0 - idleFraction) * 100)))
+          }
+        }
+        prevGpuRc6 = data.gpu_rc6_ms
+        prevGpuTime = data.gpu_timestamp_ms
+      }
+
+      if (data.available_tops && data.available_tops.length > 0) {
+        availableTops = data.available_tops
+      }
+
       memUsedGb = (data.mem_used_mb / 1024).toFixed(1)
       memTotalGb = (data.mem_total_mb / 1024).toFixed(1)
       memPercent = Math.round(data.mem_pct)
@@ -101,15 +190,6 @@ Panel {
 
   function refresh() {
     if (!statsProc.running) statsProc.running = true
-  }
-
-  function openBtop() {
-    root.close()
-    if (root.bar && typeof root.bar.run === "function") {
-      root.bar.run("omarchy launch or focus tui btop")
-    } else {
-      Quickshell.execDetached(["omarchy", "launch", "or", "focus", "tui", "btop"])
-    }
   }
 
   onOpenedChanged: {
@@ -142,14 +222,14 @@ Panel {
     text: "\uf2db"
     labelText: root.showPercentage && !root.vertical ? (root.cpuPercent + "%") : ""
     slotSize: root.showPercentage && !root.vertical ? Style.bar.iconSlot * 2 : Style.bar.iconSlot
-    tooltipText: strings.t("sysmon.tooltip").arg(root.cpuPercent).arg(root.memPercent) + " (" + root.memUsedGb + "G / " + root.memTotalGb + "G)"
-    active: root.opened || root.cpuPercent >= 85
-    activeColor: root.cpuPercent >= 85 ? root.urgentColor : root.accentColor
+    tooltipText: strings.t("sysmon.tooltip").arg(root.cpuPercent).arg(root.gpuPercent).arg(root.memPercent) + " (" + root.memUsedGb + "G / " + root.memTotalGb + "G)"
+    active: root.opened || root.cpuPercent >= 85 || root.gpuPercent >= 85
+    activeColor: (root.cpuPercent >= 85 || root.gpuPercent >= 85) ? root.urgentColor : root.accentColor
     onPressed: function(b) {
       if (b === Qt.RightButton) {
         root.togglePercentage()
       } else if (b === Qt.MiddleButton) {
-        root.openBtop()
+        root.launchSystemManager()
       } else {
         root.toggle()
       }
@@ -215,6 +295,18 @@ Panel {
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
             }
+
+            Text {
+              visible: root.gpuName !== "" && root.gpuName !== "GPU"
+              textFormat: Text.PlainText
+              text: "\uf108 " + root.gpuName
+              color: root.accentColor
+              opacity: 0.8
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              elide: Text.ElideRight
+              width: Style.space(260)
+            }
           }
         }
 
@@ -225,6 +317,13 @@ Panel {
           label: strings.t("sysmon.cpu")
           valueText: root.cpuPercent + "%"
           fraction: root.cpuPercent / 100.0
+          urgentThreshold: 0.85
+        }
+
+        MetricBar {
+          label: strings.t("sysmon.gpu") + (root.gpuClock ? (" (" + root.gpuClock + ")") : "")
+          valueText: root.gpuPercent + "%"
+          fraction: root.gpuPercent / 100.0
           urgentThreshold: 0.85
         }
 
@@ -314,17 +413,53 @@ Panel {
           foreground: root.foreground
         }
 
-        // Action button
-        Button {
+        // Action button: Open System Manager
+        Column {
           width: parent.width
-          text: strings.t("sysmon.openBtop")
-          iconText: "\uf080"
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-          horizontalPadding: Style.spacing.controlPaddingX
-          verticalPadding: Style.spacing.controlPaddingY
-          bordered: true
-          onClicked: root.openBtop()
+          spacing: Style.space(6)
+
+          Button {
+            width: parent.width
+            text: strings.t("sysmon.openSystemManager")
+            iconText: root.getTopIcon(root.getSystemManagerCmd())
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            horizontalPadding: Style.spacing.controlPaddingX
+            verticalPadding: Style.spacing.controlPaddingY
+            bordered: true
+            tooltipText: "Open " + root.getSystemManagerName()
+            onClicked: root.launchSystemManager()
+          }
+
+          // If multiple advanced system managers are installed, allow switching:
+          Row {
+            visible: root.advancedTops.length > 1
+            width: parent.width
+            spacing: Style.space(6)
+
+            Repeater {
+              model: root.advancedTops
+
+              Button {
+                required property var modelData
+                width: Math.floor((parent.width - ((root.advancedTops.length - 1) * Style.space(6))) / root.advancedTops.length)
+                text: root.getTopLabel(modelData)
+                iconText: root.getTopIcon(modelData)
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                selected: root.getSystemManagerCmd() === modelData
+                tooltipText: "Set " + root.getTopLabel(modelData) + " as system manager"
+                horizontalPadding: Style.space(4)
+                verticalPadding: Style.space(4)
+                bordered: true
+                onClicked: {
+                  root.setDefaultTop(modelData)
+                  root.launchSystemManager(modelData)
+                }
+              }
+            }
+          }
         }
       }
     }
