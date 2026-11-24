@@ -29,6 +29,7 @@ Panel {
 
   property int currentTab: 0 // 0: Overview, 1: Processes, 2: Network
   property string procSortBy: "cpu" // "cpu" or "mem"
+  property bool procSortDesc: true
   property string procSearch: ""
 
   property string netInterface: ""
@@ -158,6 +159,14 @@ Panel {
     function toggle(): void { root.toggle() }
     function togglePercentage(): void { root.togglePercentage() }
     function setTab(tab: int): void { root.currentTab = tab }
+    function sortProcesses(by: string): void {
+      if (by === root.procSortBy) {
+        root.procSortDesc = !root.procSortDesc
+      } else {
+        root.procSortBy = by
+        root.procSortDesc = true
+      }
+    }
     function openSystemMonitor(): void { root.launchSystemMonitor() }
     function openSystemManager(): void { root.launchSystemMonitor() }
     function launch(monitor: string): void { root.launchSystemMonitor(monitor) }
@@ -220,9 +229,15 @@ Panel {
       })
     }
     if (procSortBy === "mem") {
-      list.sort(function(a, b) { return (b.mem || 0) - (a.mem || 0) })
+      list.sort(function(a, b) {
+        var diff = (b.mem || 0) - (a.mem || 0)
+        return root.procSortDesc ? diff : -diff
+      })
     } else {
-      list.sort(function(a, b) { return (b.cpu || 0) - (a.cpu || 0) })
+      list.sort(function(a, b) {
+        var diff = (b.cpu || 0) - (a.cpu || 0)
+        return root.procSortDesc ? diff : -diff
+      })
     }
     return list
   }
@@ -756,67 +771,29 @@ Panel {
           width: parent.width
           spacing: Style.space(8)
 
-          // Header Controls Row: Title, Count, Sort Buttons
+          // Header Controls Row: Title and Count
           Row {
             width: parent.width
-            anchors.verticalCenter: undefined
+            spacing: Style.space(4)
 
-            Row {
-              spacing: Style.space(4)
+            Text {
+              textFormat: Text.PlainText
+              text: strings.t("sysmon.allProcesses")
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              font.bold: true
               anchors.verticalCenter: parent.verticalCenter
-
-              Text {
-                textFormat: Text.PlainText
-                text: strings.t("sysmon.allProcesses")
-                color: root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.body
-                font.bold: true
-                anchors.verticalCenter: parent.verticalCenter
-              }
-
-              Text {
-                textFormat: Text.PlainText
-                text: "(" + root.filteredProcs.length + ")"
-                color: root.foreground
-                opacity: 0.5
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
-                anchors.verticalCenter: parent.verticalCenter
-              }
             }
 
-            Item {
-              width: Math.max(0, parent.width - parent.children[0].implicitWidth - sortRow.implicitWidth)
-              height: 1
-            }
-
-            Row {
-              id: sortRow
-              spacing: Style.space(4)
+            Text {
+              textFormat: Text.PlainText
+              text: "(" + root.filteredProcs.length + ")"
+              color: root.foreground
+              opacity: 0.5
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
               anchors.verticalCenter: parent.verticalCenter
-
-              Button {
-                text: "CPU"
-                selected: root.procSortBy === "cpu"
-                fontSize: Style.font.bodySmall - 1
-                horizontalPadding: Style.space(6)
-                verticalPadding: Style.space(2)
-                bordered: true
-                tooltipText: "Sort by CPU usage"
-                onClicked: root.procSortBy = "cpu"
-              }
-
-              Button {
-                text: "RAM"
-                selected: root.procSortBy === "mem"
-                fontSize: Style.font.bodySmall - 1
-                horizontalPadding: Style.space(6)
-                verticalPadding: Style.space(2)
-                bordered: true
-                tooltipText: "Sort by RAM usage"
-                onClicked: root.procSortBy = "mem"
-              }
             }
           }
 
@@ -868,7 +845,7 @@ Panel {
             }
           }
 
-          // Table Column Headers
+          // Table Column Headers (Interactive Sorters with Arrow Indicators)
           Row {
             width: parent.width
 
@@ -889,30 +866,72 @@ Panel {
               height: 1
             }
 
-            Text {
-              textFormat: Text.PlainText
-              text: "CPU"
+            // Interactive CPU Header
+            Item {
               width: Style.space(75)
-              horizontalAlignment: Text.AlignRight
-              color: root.foreground
-              opacity: 0.45
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall - 2
-              font.bold: true
+              height: Style.space(18)
               anchors.verticalCenter: parent.verticalCenter
+
+              MouseArea {
+                id: cpuSortMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                  if (root.procSortBy === "cpu") {
+                    root.procSortDesc = !root.procSortDesc
+                  } else {
+                    root.procSortBy = "cpu"
+                    root.procSortDesc = true
+                  }
+                }
+              }
+
+              Text {
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                textFormat: Text.PlainText
+                text: root.procSortBy === "cpu" ? ("CPU " + (root.procSortDesc ? "↓" : "↑")) : "CPU"
+                color: root.procSortBy === "cpu" ? root.accentColor : root.foreground
+                opacity: root.procSortBy === "cpu" ? 1.0 : (cpuSortMouse.containsMouse ? 0.9 : 0.45)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall - 2
+                font.bold: root.procSortBy === "cpu" || cpuSortMouse.containsMouse
+              }
             }
 
-            Text {
-              textFormat: Text.PlainText
-              text: "RAM"
+            // Interactive RAM Header
+            Item {
               width: Style.space(65)
-              horizontalAlignment: Text.AlignRight
-              color: root.foreground
-              opacity: 0.45
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall - 2
-              font.bold: true
+              height: Style.space(18)
               anchors.verticalCenter: parent.verticalCenter
+
+              MouseArea {
+                id: memSortMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                  if (root.procSortBy === "mem") {
+                    root.procSortDesc = !root.procSortDesc
+                  } else {
+                    root.procSortBy = "mem"
+                    root.procSortDesc = true
+                  }
+                }
+              }
+
+              Text {
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                textFormat: Text.PlainText
+                text: root.procSortBy === "mem" ? ("RAM " + (root.procSortDesc ? "↓" : "↑")) : "RAM"
+                color: root.procSortBy === "mem" ? root.accentColor : root.foreground
+                opacity: root.procSortBy === "mem" ? 1.0 : (memSortMouse.containsMouse ? 0.9 : 0.45)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall - 2
+                font.bold: root.procSortBy === "mem" || memSortMouse.containsMouse
+              }
             }
           }
 
