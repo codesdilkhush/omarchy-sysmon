@@ -337,16 +337,50 @@ Panel {
           }
 
           Column {
+            width: Math.max(0, parent.width - Style.space(36))
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(2)
 
-            Text {
-              textFormat: Text.PlainText
-              text: strings.t("sysmon.title")
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.title
-              font.bold: true
+            Row {
+              width: parent.width
+
+              Text {
+                textFormat: Text.PlainText
+                text: strings.t("sysmon.title")
+                color: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.title
+                font.bold: true
+                anchors.verticalCenter: parent.verticalCenter
+              }
+
+              Item {
+                width: Math.max(0, parent.width - parent.children[0].implicitWidth - netRatesRow.implicitWidth)
+                height: 1
+              }
+
+              Row {
+                id: netRatesRow
+                spacing: Style.space(8)
+                anchors.verticalCenter: parent.verticalCenter
+
+                Text {
+                  textFormat: Text.PlainText
+                  text: "↓ " + root.netDownStr
+                  color: root.accentColor
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  font.bold: true
+                }
+                Text {
+                  textFormat: Text.PlainText
+                  text: "↑ " + root.netUpStr
+                  color: root.accentColor
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  font.bold: true
+                }
+              }
             }
 
             Text {
@@ -356,18 +390,6 @@ Panel {
               opacity: 0.65
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
-            }
-
-            Text {
-              visible: root.gpuName !== "" && root.gpuName !== "GPU"
-              textFormat: Text.PlainText
-              text: "\uf108 " + root.gpuName
-              color: root.accentColor
-              opacity: 0.8
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              elide: Text.ElideRight
-              width: Style.space(260)
             }
           }
         }
@@ -409,59 +431,6 @@ Panel {
           valueText: root.diskUsed + " / " + root.diskTotal + " (" + root.diskPercent + "%)"
           fraction: root.diskPercent / 100.0
           urgentThreshold: 0.90
-        }
-
-        // Network Monitor Row
-        Column {
-          width: parent.width
-          spacing: Style.space(2)
-
-          Row {
-            width: parent.width
-            Text {
-              textFormat: Text.PlainText
-              text: strings.t("sysmon.network") + (root.netInterface ? (" (" + root.netInterface + ")") : "")
-              color: root.foreground
-              opacity: 0.7
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              anchors.verticalCenter: parent.verticalCenter
-            }
-            Item {
-              width: Math.max(0, parent.width - parent.children[0].implicitWidth - netRatesRow.implicitWidth)
-              height: 1
-            }
-            Row {
-              id: netRatesRow
-              spacing: Style.space(10)
-              anchors.verticalCenter: parent.verticalCenter
-              Text {
-                textFormat: Text.PlainText
-                text: "↓ " + root.netDownStr
-                color: root.accentColor
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
-                font.bold: true
-              }
-              Text {
-                textFormat: Text.PlainText
-                text: "↑ " + root.netUpStr
-                color: root.accentColor
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
-                font.bold: true
-              }
-            }
-          }
-
-          Text {
-            textFormat: Text.PlainText
-            text: strings.t("sysmon.netTotal") + ": " + root.netRxTotalStr + " ↓ · " + root.netTxTotalStr + " ↑"
-            color: root.foreground
-            opacity: 0.5
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall - 1
-          }
         }
 
         // Battery Monitor Row
