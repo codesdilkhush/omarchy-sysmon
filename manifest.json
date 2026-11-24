@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "codesdilkhush.sysmon",
   "name": "System Monitor",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "Dilkhush",
   "license": "MIT",
-  "description": "Real-time CPU, GPU, memory, disk, and network monitor with dynamic system monitor launcher",
+  "description": "Real-time CPU & GPU thermals, battery, memory, disk, and network monitor with dynamic system monitor launcher",
   "kinds": [
     "bar-widget"
   ],
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "System Monitor",
-    "description": "Real-time CPU, GPU, RAM, Disk, and Network resource status with detail popup and system monitor launcher",
+    "description": "Real-time CPU & GPU thermals, RAM, Disk, Network, and Battery status with detail popup and system monitor launcher",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "center"

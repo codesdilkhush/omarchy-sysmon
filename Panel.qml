@@ -135,14 +135,21 @@ Panel {
   }
 
   property int cpuPercent: 0
+  property int cpuTemp: 0
   property real prevCpuIdle: 0
   property real prevCpuTotal: 0
 
   property int gpuPercent: 0
+  property int gpuTemp: 0
   property string gpuName: "GPU"
   property string gpuClock: ""
   property real prevGpuRc6: 0
   property real prevGpuTime: 0
+
+  property bool hasBattery: false
+  property int batteryPercent: 0
+  property string batteryStatus: ""
+  property string batteryPowerW: "0.0"
 
   property string memUsedGb: "0.0"
   property string memTotalGb: "0.0"
@@ -227,6 +234,13 @@ Panel {
       diskTotal = data.disk_total || "0G"
       diskPercent = data.disk_pct || 0
 
+      cpuTemp = data.cpu_temp || 0
+      gpuTemp = data.gpu_temp || 0
+      hasBattery = data.has_battery || false
+      batteryPercent = data.battery_pct !== undefined ? Math.round(data.battery_pct) : 0
+      batteryStatus = data.battery_status || ""
+      batteryPowerW = data.battery_power_w !== undefined ? String(data.battery_power_w) : "0.0"
+
       loadStr = (data.load_1 || 0).toFixed(2) + ", " + (data.load_5 || 0).toFixed(2) + ", " + (data.load_15 || 0).toFixed(2)
       cores = data.cores || 1
       topProcs = data.top_procs || []
@@ -270,7 +284,7 @@ Panel {
     text: "\uf2db"
     labelText: root.showPercentage && !root.vertical ? (root.cpuPercent + "%") : ""
     slotSize: root.showPercentage && !root.vertical ? Style.bar.iconSlot * 2 : Style.bar.iconSlot
-    tooltipText: strings.t("sysmon.tooltip").arg(root.cpuPercent).arg(root.gpuPercent).arg(root.memPercent) + " (" + root.memUsedGb + "G / " + root.memTotalGb + "G)\n↓ " + root.netDownStr + "  ↑ " + root.netUpStr
+    tooltipText: strings.t("sysmon.tooltip").arg(root.cpuPercent).arg(root.gpuPercent).arg(root.memPercent).arg(root.cpuTemp).arg(root.gpuTemp) + " (" + root.memUsedGb + "G / " + root.memTotalGb + "G)\n↓ " + root.netDownStr + "  ↑ " + root.netUpStr + (root.hasBattery ? ("\nBattery: " + root.batteryPercent + "% (" + root.batteryStatus + ")") : "")
     active: root.opened || root.cpuPercent >= 85 || root.gpuPercent >= 85
     activeColor: (root.cpuPercent >= 85 || root.gpuPercent >= 85) ? root.urgentColor : root.accentColor
     onPressed: function(b) {
@@ -362,15 +376,15 @@ Panel {
 
         // Gauges
         MetricBar {
-          label: strings.t("sysmon.cpu")
+          label: strings.t("sysmon.cpu") + (root.cpuTemp > 0 ? (" (" + root.cpuTemp + "°C)") : "")
           valueText: root.cpuPercent + "%"
           fraction: root.cpuPercent / 100.0
           urgentThreshold: 0.85
         }
 
         MetricBar {
-          label: strings.t("sysmon.gpu") + (root.gpuClock ? (" (" + root.gpuClock + ")") : "")
-          valueText: root.gpuPercent + "%"
+          label: strings.t("sysmon.gpu") + (root.gpuTemp > 0 ? (" (" + root.gpuTemp + "°C)") : "")
+          valueText: (root.gpuClock ? (root.gpuClock + " · ") : "") + root.gpuPercent + "%"
           fraction: root.gpuPercent / 100.0
           urgentThreshold: 0.85
         }
@@ -448,6 +462,16 @@ Panel {
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall - 1
           }
+        }
+
+        // Battery Monitor Row
+        MetricBar {
+          visible: root.hasBattery
+          label: strings.t("sysmon.battery") + (root.batteryStatus ? (" (" + root.batteryStatus + ")") : "")
+          valueText: (Number(root.batteryPowerW) > 0 ? (root.batteryPowerW + "W · ") : "") + root.batteryPercent + "%"
+          fraction: root.batteryPercent / 100.0
+          urgentThreshold: 0.20
+          invertUrgent: true
         }
 
         PanelSeparator { foreground: root.foreground }
@@ -571,6 +595,8 @@ Panel {
     property string valueText: ""
     property real fraction: 0.0
     property real urgentThreshold: 0.85
+    property bool invertUrgent: false
+    readonly property bool isUrgent: (!invertUrgent && fraction >= urgentThreshold) || (invertUrgent && fraction <= urgentThreshold)
 
     width: parent ? parent.width : 0
     spacing: Style.space(4)
@@ -593,10 +619,10 @@ Panel {
       Text {
         textFormat: Text.PlainText
         text: valueText
-        color: fraction >= urgentThreshold ? root.urgentColor : root.foreground
+        color: isUrgent ? root.urgentColor : root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
-        font.bold: fraction >= urgentThreshold
+        font.bold: isUrgent
         anchors.verticalCenter: parent.verticalCenter
       }
     }
@@ -613,7 +639,7 @@ Panel {
         anchors.verticalCenter: track.verticalCenter
         height: track.height
         radius: track.radius
-        color: fraction >= urgentThreshold ? root.urgentColor : root.accentColor
+        color: isUrgent ? root.urgentColor : root.accentColor
         width: Math.max(track.height, Math.min(track.width, track.width * Math.max(0, Math.min(1, fraction))))
 
         Behavior on width {
