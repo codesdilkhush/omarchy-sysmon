@@ -184,6 +184,13 @@ Panel {
   property var topProcs: []
   property bool hasData: false
 
+  property string fwName: "None"
+  property bool fwActive: false
+  property int connInbound: 0
+  property int connOutbound: 0
+  property int connTotal: 0
+  property int listenCount: 0
+
   function parseStats(raw) {
     try {
       var data = JSON.parse(raw)
@@ -261,6 +268,14 @@ Panel {
       cores = data.cores || 1
       threads = data.threads || cores
       topProcs = data.top_procs || []
+
+      fwName = data.fw_name || "None"
+      fwActive = data.fw_active === true
+      connInbound = data.conn_inbound || 0
+      connOutbound = data.conn_outbound || 0
+      connTotal = data.conn_total || 0
+      listenCount = data.listen_count || 0
+
       hasData = true
     } catch (e) {
       // ignore parse error
@@ -301,7 +316,7 @@ Panel {
     text: "\uf2db"
     labelText: root.showPercentage && !root.vertical ? (root.cpuPercent + "%") : ""
     slotSize: root.showPercentage && !root.vertical ? Style.bar.iconSlot * 2 : Style.bar.iconSlot
-    tooltipText: strings.t("sysmon.tooltip").arg(root.cpuPercent).arg(root.gpuPercent).arg(root.memPercent).arg(root.cpuTemp).arg(root.gpuTemp) + " (" + root.memUsedGb + "G / " + root.memTotalGb + "G)\n↓ " + root.netDownStr + "  ↑ " + root.netUpStr + (root.hasBattery ? ("\nBattery: " + root.batteryPercent + "% (" + root.batteryStatus + ")") : "")
+    tooltipText: strings.t("sysmon.tooltip").arg(root.cpuPercent).arg(root.gpuPercent).arg(root.memPercent).arg(root.cpuTemp).arg(root.gpuTemp) + " (" + root.memUsedGb + "G / " + root.memTotalGb + "G)\n↓ " + root.netDownStr + "  ↑ " + root.netUpStr + (root.hasBattery ? ("\nBattery: " + root.batteryPercent + "% (" + root.batteryStatus + ")") : "") + "\nFirewall: " + (root.fwActive ? (root.fwName + " (Active)") : "Inactive") + " | " + root.connInbound + " in · " + root.connOutbound + " out"
     active: root.opened || root.cpuPercent >= 85 || root.gpuPercent >= 85
     activeColor: (root.cpuPercent >= 85 || root.gpuPercent >= 85) ? root.urgentColor : root.accentColor
     onPressed: function(b) {
@@ -458,6 +473,79 @@ Panel {
           fraction: root.batteryPercent / 100.0
           urgentThreshold: 0.20
           invertUrgent: true
+        }
+
+        // Security & Network Connections (Firewall & Active Sockets)
+        Row {
+          width: parent.width
+          spacing: Style.space(8)
+
+          // Firewall Status Card
+          Rectangle {
+            height: Style.space(26)
+            width: Math.floor((parent.width - Style.space(8)) / 2)
+            radius: Style.space(4)
+            color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
+            border.color: root.fwActive ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.35) : Qt.rgba(root.urgentColor.r, root.urgentColor.g, root.urgentColor.b, 0.35)
+            border.width: Style.normalBorderWidth
+
+            Row {
+              anchors.centerIn: parent
+              spacing: Style.space(6)
+
+              Text {
+                textFormat: Text.PlainText
+                text: root.fwActive ? "\uf3ed" : "\uf071"
+                color: root.fwActive ? root.accentColor : root.urgentColor
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                anchors.verticalCenter: parent.verticalCenter
+              }
+
+              Text {
+                textFormat: Text.PlainText
+                text: root.fwActive ? (root.fwName + ": Active") : "Firewall: Off"
+                color: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                font.bold: true
+                anchors.verticalCenter: parent.verticalCenter
+              }
+            }
+          }
+
+          // Active Sockets Card
+          Rectangle {
+            height: Style.space(26)
+            width: parent.width - Math.floor((parent.width - Style.space(8)) / 2) - Style.space(8)
+            radius: Style.space(4)
+            color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
+            border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.12)
+            border.width: Style.normalBorderWidth
+
+            Row {
+              anchors.centerIn: parent
+              spacing: Style.space(6)
+
+              Text {
+                textFormat: Text.PlainText
+                text: "\uf6ff"
+                color: root.accentColor
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                anchors.verticalCenter: parent.verticalCenter
+              }
+
+              Text {
+                textFormat: Text.PlainText
+                text: "↓ " + root.connInbound + " in  ·  ↑ " + root.connOutbound + " out"
+                color: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                anchors.verticalCenter: parent.verticalCenter
+              }
+            }
+          }
         }
 
         PanelSeparator { foreground: root.foreground }

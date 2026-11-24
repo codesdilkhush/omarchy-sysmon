@@ -209,6 +209,62 @@ done
 printf '"has_battery": %s, "battery_pct": %d, "battery_status": "%s", "battery_power_w": %s, ' \
   "$has_battery" "$battery_pct" "$battery_status" "$battery_power_w"
 
+# Firewall status (unprivileged query)
+fw_name="None"
+fw_active=false
+
+if systemctl is-active --quiet ufw 2>/dev/null; then
+  fw_name="UFW"
+  fw_active=true
+elif systemctl is-active --quiet firewalld 2>/dev/null; then
+  fw_name="firewalld"
+  fw_active=true
+elif systemctl is-active --quiet nftables 2>/dev/null; then
+  fw_name="nftables"
+  fw_active=true
+elif systemctl is-active --quiet iptables 2>/dev/null; then
+  fw_name="iptables"
+  fw_active=true
+elif [[ -f /etc/ufw/ufw.conf ]] && grep -q '^ENABLED=yes' /etc/ufw/ufw.conf 2>/dev/null; then
+  fw_name="UFW"
+  fw_active=true
+fi
+
+# Active network socket connections (inbound vs outbound)
+conn_in=0
+conn_out=0
+listen_count=0
+if command -v ss &>/dev/null; then
+  listen_ports=$(ss -H -t -l -n 2>/dev/null | awk '{print $4}' | awk -F: '{print $NF}' | sort -u || true)
+  if [[ -n "$listen_ports" ]]; then
+    listen_count=$(echo "$listen_ports" | grep -c . || echo 0)
+  fi
+
+  read -r conn_in conn_out < <(awk -v lp="${listen_ports:-}" '
+  BEGIN {
+    split(lp, ports, RS)
+    for (i in ports) if (ports[i] != "") is_listen[ports[i]] = 1
+    inbound = 0
+    outbound = 0
+  }
+  NF >= 4 {
+    n = split($4, a, ":")
+    local_port = a[n]
+    if (local_port in is_listen) {
+      inbound++
+    } else {
+      outbound++
+    }
+  }
+  END {
+    print inbound, outbound
+  }
+  ' <(ss -H -t -n state established 2>/dev/null || true) || echo "0 0")
+fi
+
+printf '"fw_name": "%s", "fw_active": %s, "conn_inbound": %d, "conn_outbound": %d, "conn_total": %d, "listen_count": %d, ' \
+  "$fw_name" "$fw_active" "${conn_in:-0}" "${conn_out:-0}" "$(( ${conn_in:-0} + ${conn_out:-0} ))" "${listen_count:-0}"
+
 # Detect installed/available top tools dynamically
 available_tops=()
 for cmd in btop htop btm top; do
