@@ -17,6 +17,6 @@
     "description": "Real-time CPU, GPU, RAM, and Disk resource status with detail popup and system manager launcher",
     "category": "System",
     "allowMultiple": false,
-    "defaultSection": "right"
+    "defaultSection": "center"
   }
 }
