@@ -62,7 +62,7 @@ Panel {
     return availableTops && availableTops.indexOf(cmd) !== -1
   }
 
-  function getSystemManagerCmd() {
+  function getSystemMonitorCmd() {
     if (defaultTop && isAvailable(defaultTop)) {
       return defaultTop
     }
@@ -72,12 +72,14 @@ Panel {
     }
     return availableTops.length > 0 ? availableTops[0] : "btop"
   }
+  function getSystemManagerCmd() { return getSystemMonitorCmd() }
 
-  function getSystemManagerName() {
-    var cmd = getSystemManagerCmd()
+  function getSystemMonitorName() {
+    var cmd = getSystemMonitorCmd()
     if (cmd === "btm") return "bottom"
     return cmd
   }
+  function getSystemManagerName() { return getSystemMonitorName() }
 
   function getTopLabel(cmd) {
     if (cmd === "btm") return "bottom"
@@ -98,18 +100,19 @@ Panel {
     if (root.bar && root.bar.shell) root.bar.shell.updateEntryInline(root.moduleName, root.settings)
   }
 
-  function launchSystemManager(cmd) {
+  function launchSystemMonitor(cmd) {
     root.close()
-    var target = cmd || getSystemManagerCmd()
+    var target = cmd || getSystemMonitorCmd()
     if (root.bar && typeof root.bar.run === "function") {
       root.bar.run("omarchy launch or focus tui " + target)
     } else {
       Quickshell.execDetached(["omarchy", "launch", "or", "focus", "tui", target])
     }
   }
+  function launchSystemManager(cmd) { return launchSystemMonitor(cmd) }
 
   function openBtop() {
-    launchSystemManager()
+    launchSystemMonitor()
   }
 
   ShellIpc {
@@ -120,8 +123,9 @@ Panel {
     function hide(): void { root.close() }
     function toggle(): void { root.toggle() }
     function togglePercentage(): void { root.togglePercentage() }
-    function openSystemManager(): void { root.launchSystemManager() }
-    function launch(monitor: string): void { root.launchSystemManager(monitor) }
+    function openSystemMonitor(): void { root.launchSystemMonitor() }
+    function openSystemManager(): void { root.launchSystemMonitor() }
+    function launch(monitor: string): void { root.launchSystemMonitor(monitor) }
     function setDefault(monitor: string): void { root.setDefaultTop(monitor) }
   }
 
@@ -273,7 +277,7 @@ Panel {
       if (b === Qt.RightButton) {
         root.togglePercentage()
       } else if (b === Qt.MiddleButton) {
-        root.launchSystemManager()
+        root.launchSystemMonitor()
       } else {
         root.toggle()
       }
@@ -510,25 +514,25 @@ Panel {
           foreground: root.foreground
         }
 
-        // Action button: Open System Manager
+        // Action button: Open System Monitor
         Column {
           width: parent.width
           spacing: Style.space(6)
 
           Button {
             width: parent.width
-            text: strings.t("sysmon.openSystemManager")
-            iconText: root.getTopIcon(root.getSystemManagerCmd())
+            text: strings.t("sysmon.openSystemMonitor")
+            iconText: root.getTopIcon(root.getSystemMonitorCmd())
             foreground: root.foreground
             fontFamily: root.fontFamily
             horizontalPadding: Style.spacing.controlPaddingX
             verticalPadding: Style.spacing.controlPaddingY
             bordered: true
-            tooltipText: "Open " + root.getSystemManagerName()
-            onClicked: root.launchSystemManager()
+            tooltipText: "Open " + root.getSystemMonitorName()
+            onClicked: root.launchSystemMonitor()
           }
 
-          // If multiple advanced system managers are installed, allow switching:
+          // If multiple advanced system monitors are installed, allow switching:
           Row {
             visible: root.advancedTops.length > 1
             width: parent.width
@@ -545,14 +549,14 @@ Panel {
                 foreground: root.foreground
                 fontFamily: root.fontFamily
                 fontSize: Style.font.bodySmall
-                selected: root.getSystemManagerCmd() === modelData
-                tooltipText: "Set " + root.getTopLabel(modelData) + " as system manager"
+                selected: root.getSystemMonitorCmd() === modelData
+                tooltipText: "Set " + root.getTopLabel(modelData) + " as default system monitor"
                 horizontalPadding: Style.space(4)
                 verticalPadding: Style.space(4)
                 bordered: true
                 onClicked: {
                   root.setDefaultTop(modelData)
-                  root.launchSystemManager(modelData)
+                  root.launchSystemMonitor(modelData)
                 }
               }
             }

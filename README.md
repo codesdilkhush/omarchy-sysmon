@@ -10,7 +10,7 @@ Real-time CPU, GPU, memory, disk, and network monitoring status bar widget and p
 - Real-time Network bandwidth monitoring (download/upload transfer rates & totals)
 - Native GPU telemetry: Intel RC6 residency & clock frequency, AMD DRM sysfs, and NVIDIA SMI
 - Top CPU-consuming processes live view
-- Dynamic system manager launcher: automatically launches `btop`, `htop`, `bottom` (`btm`), or `top` based on what is available
+- Dynamic system monitor launcher: automatically launches `btop`, `htop`, `bottom` (`btm`), or `top` based on what is available
 - Clean status bar icon matching Omarchy bar styling
 - Right-click status bar toggle for inline percentage
 
