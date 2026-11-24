@@ -1,12 +1,13 @@
 # System Monitor for Omarchy
 
-Real-time CPU, GPU, memory, and disk monitoring status bar widget and popup panel for the Omarchy shell.
+Real-time CPU, GPU, memory, disk, and network monitoring status bar widget and popup panel for the Omarchy shell.
 
 ![System Monitor Preview](preview.png)
 
 ## Features
 
 - Real-time CPU, GPU (Intel, AMD, NVIDIA), RAM, Swap, and root filesystem usage gauges
+- Real-time Network bandwidth monitoring (download/upload transfer rates & totals)
 - Native GPU telemetry: Intel RC6 residency & clock frequency, AMD DRM sysfs, and NVIDIA SMI
 - Top CPU-consuming processes live view
 - Dynamic system manager launcher: automatically launches `btop`, `htop`, `bottom` (`btm`), or `top` based on what is available

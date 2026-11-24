@@ -5,7 +5,7 @@
   "version": "1.1.0",
   "author": "Dilkhush",
   "license": "MIT",
-  "description": "Real-time CPU, GPU, memory, and disk monitor with dynamic system manager launcher",
+  "description": "Real-time CPU, GPU, memory, disk, and network monitor with dynamic system manager launcher",
   "kinds": [
     "bar-widget"
   ],
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "System Monitor",
-    "description": "Real-time CPU, GPU, RAM, and Disk resource status with detail popup and system manager launcher",
+    "description": "Real-time CPU, GPU, RAM, Disk, and Network resource status with detail popup and system manager launcher",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "center"

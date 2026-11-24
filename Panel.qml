@@ -27,6 +27,31 @@ Panel {
   property var availableTops: ["btop"]
   readonly property var advancedTops: availableTops.filter(function(t) { return t !== "top" || availableTops.length === 1 })
 
+  property string netInterface: ""
+  property real prevNetRx: 0
+  property real prevNetTx: 0
+  property real prevNetTime: 0
+  property string netDownStr: "0 B/s"
+  property string netUpStr: "0 B/s"
+  property string netRxTotalStr: "0 B"
+  property string netTxTotalStr: "0 B"
+
+  function formatSpeed(bytesPerSec) {
+    if (!bytesPerSec || bytesPerSec <= 0) return "0 B/s"
+    if (bytesPerSec >= 1073741824) return (bytesPerSec / 1073741824).toFixed(1) + " GB/s"
+    if (bytesPerSec >= 1048576) return (bytesPerSec / 1048576).toFixed(1) + " MB/s"
+    if (bytesPerSec >= 1024) return (bytesPerSec / 1024).toFixed(0) + " KB/s"
+    return Math.round(bytesPerSec) + " B/s"
+  }
+
+  function formatBytes(bytes) {
+    if (!bytes || bytes <= 0) return "0 B"
+    if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(1) + " GB"
+    if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + " MB"
+    if (bytes >= 1024) return (bytes / 1024).toFixed(0) + " KB"
+    return Math.round(bytes) + " B"
+  }
+
   function togglePercentage() {
     showPercentage = !showPercentage
     root.settings = Object.assign({}, root.settings, { showPercentage: showPercentage })
@@ -163,6 +188,25 @@ Panel {
         prevGpuTime = data.gpu_timestamp_ms
       }
 
+      netInterface = data.net_iface || ""
+      if (data.net_rx_bytes !== undefined && data.net_tx_bytes !== undefined && data.gpu_timestamp_ms !== undefined) {
+        if (prevNetTime > 0 && data.gpu_timestamp_ms > prevNetTime) {
+          var dtNet = (data.gpu_timestamp_ms - prevNetTime) / 1000.0
+          if (dtNet > 0) {
+            var dRx = Math.max(0, data.net_rx_bytes - prevNetRx)
+            var dTx = Math.max(0, data.net_tx_bytes - prevNetTx)
+            netDownStr = root.formatSpeed(dRx / dtNet)
+            netUpStr = root.formatSpeed(dTx / dtNet)
+          }
+        }
+        prevNetRx = data.net_rx_bytes
+        prevNetTx = data.net_tx_bytes
+        prevNetTime = data.gpu_timestamp_ms
+
+        netRxTotalStr = root.formatBytes(data.net_rx_bytes)
+        netTxTotalStr = root.formatBytes(data.net_tx_bytes)
+      }
+
       if (data.available_tops && data.available_tops.length > 0) {
         availableTops = data.available_tops
       }
@@ -222,7 +266,7 @@ Panel {
     text: "\uf2db"
     labelText: root.showPercentage && !root.vertical ? (root.cpuPercent + "%") : ""
     slotSize: root.showPercentage && !root.vertical ? Style.bar.iconSlot * 2 : Style.bar.iconSlot
-    tooltipText: strings.t("sysmon.tooltip").arg(root.cpuPercent).arg(root.gpuPercent).arg(root.memPercent) + " (" + root.memUsedGb + "G / " + root.memTotalGb + "G)"
+    tooltipText: strings.t("sysmon.tooltip").arg(root.cpuPercent).arg(root.gpuPercent).arg(root.memPercent) + " (" + root.memUsedGb + "G / " + root.memTotalGb + "G)\n↓ " + root.netDownStr + "  ↑ " + root.netUpStr
     active: root.opened || root.cpuPercent >= 85 || root.gpuPercent >= 85
     activeColor: (root.cpuPercent >= 85 || root.gpuPercent >= 85) ? root.urgentColor : root.accentColor
     onPressed: function(b) {
@@ -347,6 +391,59 @@ Panel {
           valueText: root.diskUsed + " / " + root.diskTotal + " (" + root.diskPercent + "%)"
           fraction: root.diskPercent / 100.0
           urgentThreshold: 0.90
+        }
+
+        // Network Monitor Row
+        Column {
+          width: parent.width
+          spacing: Style.space(2)
+
+          Row {
+            width: parent.width
+            Text {
+              textFormat: Text.PlainText
+              text: strings.t("sysmon.network") + (root.netInterface ? (" (" + root.netInterface + ")") : "")
+              color: root.foreground
+              opacity: 0.7
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              anchors.verticalCenter: parent.verticalCenter
+            }
+            Item {
+              width: Math.max(0, parent.width - parent.children[0].implicitWidth - netRatesRow.implicitWidth)
+              height: 1
+            }
+            Row {
+              id: netRatesRow
+              spacing: Style.space(10)
+              anchors.verticalCenter: parent.verticalCenter
+              Text {
+                textFormat: Text.PlainText
+                text: "↓ " + root.netDownStr
+                color: root.accentColor
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                font.bold: true
+              }
+              Text {
+                textFormat: Text.PlainText
+                text: "↑ " + root.netUpStr
+                color: root.accentColor
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                font.bold: true
+              }
+            }
+          }
+
+          Text {
+            textFormat: Text.PlainText
+            text: strings.t("sysmon.netTotal") + ": " + root.netRxTotalStr + " ↓ · " + root.netTxTotalStr + " ↑"
+            color: root.foreground
+            opacity: 0.5
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall - 1
+          }
         }
 
         PanelSeparator { foreground: root.foreground }

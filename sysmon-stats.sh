@@ -101,6 +101,24 @@ gpu_clock="${gpu_clock//\"/}"
 printf '"gpu_name": "%s", "gpu_pct": %d, "gpu_clock": "%s", "gpu_rc6_ms": %s, "gpu_timestamp_ms": %s, ' \
   "$gpu_name" "$gpu_pct" "$gpu_clock" "${gpu_rc6:-0}" "$now_ms"
 
+# Network stats
+net_iface=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $5; exit}' || true)
+if [[ -z "$net_iface" ]]; then
+  net_iface=$(awk 'NR>2 && $1 !~ /^lo:/ { sub(/:/, "", $1); print $1; exit }' /proc/net/dev || true)
+fi
+
+read -r net_rx net_tx < <(awk '
+NR > 2 && $1 !~ /^lo:/ {
+  rx += $2
+  tx += $10
+}
+END {
+  print (rx ? rx : 0), (tx ? tx : 0)
+}
+' /proc/net/dev)
+
+printf '"net_iface": "%s", "net_rx_bytes": %d, "net_tx_bytes": %d, ' "${net_iface:-}" "${net_rx:-0}" "${net_tx:-0}"
+
 # Detect installed/available top tools dynamically
 available_tops=()
 for cmd in btop htop btm top; do
