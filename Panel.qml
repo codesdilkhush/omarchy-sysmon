@@ -165,6 +165,7 @@ Panel {
 
   property string loadStr: "0.00, 0.00, 0.00"
   property int cores: 1
+  property int threads: 1
   property var topProcs: []
   property bool hasData: false
 
@@ -243,6 +244,7 @@ Panel {
 
       loadStr = (data.load_1 || 0).toFixed(2) + ", " + (data.load_5 || 0).toFixed(2) + ", " + (data.load_15 || 0).toFixed(2)
       cores = data.cores || 1
+      threads = data.threads || cores
       topProcs = data.top_procs || []
       hasData = true
     } catch (e) {
@@ -385,7 +387,7 @@ Panel {
 
             Text {
               textFormat: Text.PlainText
-              text: strings.tn("sysmon.cores", root.cores).arg(root.cores) + " · " + strings.t("sysmon.load") + ": " + root.loadStr
+              text: (root.threads > root.cores ? (root.cores + "C / " + root.threads + "T") : (root.cores + "C")) + " · " + strings.t("sysmon.load") + ": " + root.loadStr
               color: root.foreground
               opacity: 0.65
               font.family: root.fontFamily

@@ -29,10 +29,21 @@ END {
 }
 ' /proc/meminfo
 
-# Load average and cores
+# Load average, physical cores, and logical threads
 read -r l1 l5 l15 _ < /proc/loadavg
-cores=$(nproc)
-printf '"load_1": %.2f, "load_5": %.2f, "load_15": %.2f, "cores": %d, ' "$l1" "$l5" "$l15" "$cores"
+threads=$(nproc)
+cores=$(awk -F: '
+/^core id/ { cores[$2] = 1 }
+/^physical id/ { pkgs[$2] = 1 }
+END {
+  c = length(cores); p = length(pkgs)
+  print (c > 0 && p > 0) ? (c * p) : (c > 0 ? c : 0)
+}
+' /proc/cpuinfo 2>/dev/null || echo 0)
+if (( cores <= 0 )); then
+  cores=$threads
+fi
+printf '"load_1": %.2f, "load_5": %.2f, "load_15": %.2f, "cores": %d, "threads": %d, ' "$l1" "$l5" "$l15" "$cores" "$threads"
 
 # CPU temperature (°C)
 cpu_temp=0
