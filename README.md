@@ -8,9 +8,9 @@ Real-time CPU & GPU thermals, battery, memory, disk, and network monitoring stat
 
 - Real-time CPU & GPU temperature tracking (°C)
 - Battery charge status, percentage, and live power draw (W)
-- Real-time CPU, GPU (Intel, AMD, NVIDIA), RAM, Swap, and root filesystem usage gauges
+- Real-time CPU, GPU (Intel, AMD, NVIDIA, Apple Silicon), RAM, Swap, and root filesystem usage gauges
 - Real-time Network bandwidth monitoring (download/upload transfer rates & totals)
-- Native GPU telemetry: Intel RC6 residency & clock frequency, AMD DRM sysfs, and NVIDIA SMI
+- Native GPU telemetry: Intel RC6 residency & clock frequency, AMD DRM sysfs, NVIDIA SMI, and Apple AGX (Asahi Linux) busy time & power
 - Top CPU-consuming processes live view
 - Dynamic system monitor launcher: automatically launches `btop`, `htop`, `bottom` (`btm`), or `top` based on what is available
 - Clean status bar icon matching Omarchy bar styling
