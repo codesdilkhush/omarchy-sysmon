@@ -159,6 +159,7 @@ Panel {
   property string gpuName: "GPU"
   property string gpuClock: ""
   property real prevGpuRc6: 0
+  property real prevGpuBusyNs: 0
   property real prevGpuTime: 0
 
   property bool hasBattery: false
@@ -202,7 +203,16 @@ Panel {
 
       if (data.gpu_pct !== undefined && data.gpu_pct > 0) {
         gpuPercent = Math.max(0, Math.min(100, Math.round(data.gpu_pct)))
-      } else if (data.gpu_rc6_ms !== undefined && data.gpu_timestamp_ms !== undefined) {
+      } else if (data.gpu_busy_ns !== undefined && data.gpu_busy_ns > 0 && data.gpu_timestamp_ms !== undefined) {
+        // Apple AGX: cumulative busy time in ns -> utilization over the sample interval
+        if (prevGpuTime > 0 && data.gpu_timestamp_ms > prevGpuTime && data.gpu_busy_ns >= prevGpuBusyNs) {
+          var dtMs = data.gpu_timestamp_ms - prevGpuTime
+          var busyMs = (data.gpu_busy_ns - prevGpuBusyNs) / 1.0e6
+          gpuPercent = Math.max(0, Math.min(100, Math.round(busyMs / dtMs * 100)))
+        }
+        prevGpuBusyNs = data.gpu_busy_ns
+        prevGpuTime = data.gpu_timestamp_ms
+      } else if (data.gpu_rc6_ms !== undefined && data.gpu_rc6_ms > 0 && data.gpu_timestamp_ms !== undefined) {
         if (prevGpuTime > 0 && data.gpu_timestamp_ms > prevGpuTime) {
           var dt = data.gpu_timestamp_ms - prevGpuTime
           var dRc6 = data.gpu_rc6_ms - prevGpuRc6

@@ -121,6 +121,27 @@ if [[ -z "$gpu_clock" ]]; then
   done
 fi
 
+# Apple Silicon (Asahi): agx_stats exposes cumulative busy_ns, power and pstate.
+# Panel.qml turns busy_ns deltas into a percentage; power is shown as the "clock".
+gpu_busy_ns=0
+for f in /sys/class/drm/card*/device/agx_stats; do
+  if [[ -r "$f" ]]; then
+    gpu_busy_ns=$(awk '$1=="busy_ns" { print $2 }' "$f" 2>/dev/null || echo 0)
+    gpu_busy_ns=${gpu_busy_ns:-0}
+    agx_power_mw=$(awk '$1=="power_mw" { print $2 }' "$f" 2>/dev/null || echo 0)
+    if [[ -n "${agx_power_mw:-}" ]] && (( agx_power_mw > 0 )); then
+      gpu_clock=$(awk "BEGIN { printf \"%.1fW\", $agx_power_mw / 1000.0 }")
+    fi
+    apple_model=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)
+    if [[ "$apple_model" =~ \((M[0-9][A-Za-z]*) ]]; then
+      gpu_name="Apple ${BASH_REMATCH[1]} GPU"
+    else
+      gpu_name="Apple GPU"
+    fi
+    break
+  fi
+done
+
 for f in /sys/class/drm/card*/device/gpu_busy_percent; do
   if [[ -r "$f" ]]; then
     gpu_pct=$(cat "$f" 2>/dev/null || echo 0)
@@ -161,8 +182,8 @@ fi
 # Clean strings for JSON
 gpu_name="${gpu_name//\"/}"
 gpu_clock="${gpu_clock//\"/}"
-printf '"gpu_name": "%s", "gpu_pct": %d, "gpu_clock": "%s", "gpu_temp": %d, "gpu_rc6_ms": %s, "gpu_timestamp_ms": %s, ' \
-  "$gpu_name" "$gpu_pct" "$gpu_clock" "$gpu_temp" "${gpu_rc6:-0}" "$now_ms"
+printf '"gpu_name": "%s", "gpu_pct": %d, "gpu_clock": "%s", "gpu_temp": %d, "gpu_rc6_ms": %s, "gpu_busy_ns": %s, "gpu_timestamp_ms": %s, ' \
+  "$gpu_name" "$gpu_pct" "$gpu_clock" "$gpu_temp" "${gpu_rc6:-0}" "${gpu_busy_ns:-0}" "$now_ms"
 
 # Network stats
 net_iface=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $5; exit}' || true)
@@ -188,8 +209,10 @@ battery_pct=0
 battery_status=""
 battery_power_w="0.0"
 
-for b in /sys/class/power_supply/BAT*; do
-  if [[ -d "$b" ]] && [[ "$(cat "$b/present" 2>/dev/null || echo 0)" == "1" ]]; then
+# Match any supply of type Battery (BAT0, macsmc-battery on Apple Silicon, ...).
+for b in /sys/class/power_supply/*; do
+  if [[ -d "$b" ]] && [[ "$(cat "$b/type" 2>/dev/null || true)" == "Battery" ]] \
+     && [[ "$(cat "$b/present" 2>/dev/null || echo 1)" == "1" ]]; then
     has_battery="true"
     battery_pct=$(cat "$b/capacity" 2>/dev/null || echo 0)
     battery_status=$(cat "$b/status" 2>/dev/null || echo "Unknown")
